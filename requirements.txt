@@ -1,0 +1,4 @@
+pyexecjs
+srt
+requests
+jieba 
