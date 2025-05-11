@@ -45,8 +45,10 @@ A powerful and flexible tool for translating subtitle files between languages. C
 ### From PyPI (Recommended)
 
 ```bash
-pip install subtranslate
+pip install subtranslate-py
 ```
+
+> **Note:** While the PyPI package name is `subtranslate-py`, the package is still imported and used as `subtranslate` in your code.
 
 ### From Source
 
