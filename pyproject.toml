@@ -10,11 +10,10 @@ authors = [
 ]
 description = "A tool for translating subtitle files"
 readme = "README.md"
-license = {text = "GPL-3.0-or-later"}
+license = "MIT"
 requires-python = ">=3.6"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Operating System :: OS Independent",
 ]
 dependencies = [
@@ -29,4 +28,8 @@ dependencies = [
 "Bug Tracker" = "https://github.com/tboy1337/SubtranSlate/issues"
 
 [project.scripts]
-subtranslate = "subtranslate.__main__:main" 
+subtranslate = "subtranslate.__main__:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["subtranslate", "utilities"] 
