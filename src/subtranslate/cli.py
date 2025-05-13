@@ -11,9 +11,9 @@ from typing import List, Optional, Dict
 import traceback
 from pathlib import Path
 
-from subtranslate.core.main import SubtitleTranslator
-from subtranslate.core.translation import TranslationError
-from subtranslate.core.subtitle import SubtitleError
+from src.subtranslate.core.main import SubtitleTranslator
+from src.subtranslate.core.translation import TranslationError
+from src.subtranslate.core.subtitle import SubtitleError
 
 # Configure logging
 logging.basicConfig(

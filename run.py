@@ -14,7 +14,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, script_dir)
 
 # Import the package version
-from subtranslate import __version__
+from src.subtranslate import __version__
 
 def main():
     """Entry point when executed directly."""
@@ -33,7 +33,7 @@ def main():
         return 0
     
     # Import CLI main function
-    from subtranslate.cli import main as cli_main
+    from src.subtranslate.cli import main as cli_main
     return cli_main(args.remainder)
 
 if __name__ == '__main__':
