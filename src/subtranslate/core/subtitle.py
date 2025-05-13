@@ -122,8 +122,29 @@ class SubtitleProcessor:
             SubtitleError: If file can't be saved
         """
         try:
+            import srt
+            from datetime import timedelta
+            
+            # Ensure subtitles are proper srt.Subtitle objects
+            valid_subtitles = []
+            for sub in subtitles:
+                if not isinstance(sub, srt.Subtitle):
+                    # Try to convert to srt.Subtitle if it's a dict or similar
+                    try:
+                        valid_sub = srt.Subtitle(
+                            index=getattr(sub, 'index', 0),
+                            start=getattr(sub, 'start', timedelta()),
+                            end=getattr(sub, 'end', timedelta()),
+                            content=getattr(sub, 'content', '')
+                        )
+                        valid_subtitles.append(valid_sub)
+                    except Exception as e:
+                        logger.warning(f"Failed to convert subtitle: {e}")
+                else:
+                    valid_subtitles.append(sub)
+                    
             with open(file_path, 'w', encoding=encoding) as f:
-                f.write(srt.compose(subtitles))
+                f.write(srt.compose(valid_subtitles))
             logger.info(f"Saved subtitles to {file_path}")
         except Exception as e:
             logger.error(f"Failed to save subtitles: {e}")
@@ -309,7 +330,11 @@ class SubtitleProcessor:
             return []
             
         # Initialize with empty strings
-        dialog_num = mass_list[-1][-1][0]
+        dialog_num = mass_list[-1][-1][0] if mass_list and mass_list[-1] else 0
+        if dialog_num == 0:
+            logger.warning("No dialogues found in mass_list")
+            return []
+            
         dialog_list = [''] * dialog_num
         
         for k in range(len(sen_list)):
@@ -319,6 +344,11 @@ class SubtitleProcessor:
                 
             sentence = sen_list[k]
             record = mass_list[k]
+            
+            if not record:
+                logger.warning(f"Empty record for sentence {k}")
+                continue
+                
             total_dialog_of_sentence = len(record)
             
             if total_dialog_of_sentence == 1:
@@ -326,6 +356,10 @@ class SubtitleProcessor:
                 dialog_list[record[0][0] - 1] += sentence[0:record[0][1]]
             else:
                 # Complex case: one sentence spans multiple dialogues
+                if not record:
+                    logger.warning(f"Empty record for sentence {k}")
+                    continue
+                    
                 origin_len = record[-1][1]
                 translated_len = len(sentence)
                 
@@ -440,8 +474,8 @@ class SubtitleProcessor:
         for sub in subtitles:
             serialized.append({
                 'index': sub.index,
-                'start_time': sub.start_time,
-                'end_time': sub.end_time,
+                'start_time': sub.start,
+                'end_time': sub.end,
                 'content': sub.content,
                 'translated_content': getattr(sub, 'translated_content', None)
             })
@@ -457,14 +491,14 @@ class SubtitleProcessor:
         Returns:
             List of subtitle objects
         """
-        from .subtitle import Subtitle
+        import srt
         
         subtitles = []
         for data in serialized:
-            sub = Subtitle(
+            sub = srt.Subtitle(
                 index=data['index'],
-                start_time=data['start_time'],
-                end_time=data['end_time'],
+                start=data['start_time'],
+                end=data['end_time'],
                 content=data['content']
             )
             if data.get('translated_content') is not None:

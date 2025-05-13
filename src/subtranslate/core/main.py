@@ -8,6 +8,7 @@ import json
 from typing import List, Optional, Dict, Any
 import time
 from pathlib import Path
+from datetime import timedelta
 
 from .translation import get_translator, TranslationError, RateLimitError
 from .subtitle import SubtitleProcessor, SubtitleError
@@ -170,8 +171,15 @@ class SubtitleTranslator:
     def _save_checkpoint(self, checkpoint_file: str, data: Dict[str, Any]) -> None:
         """Save translation progress to checkpoint file."""
         try:
+            # Create a custom JSON encoder to handle timedelta objects
+            class CustomJSONEncoder(json.JSONEncoder):
+                def default(self, obj):
+                    if isinstance(obj, timedelta):
+                        return str(obj)
+                    return super().default(obj)
+                    
             with open(checkpoint_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+                json.dump(data, f, ensure_ascii=False, indent=2, cls=CustomJSONEncoder)
             logger.debug(f"Saved checkpoint to {checkpoint_file}")
         except Exception as e:
             logger.warning(f"Failed to save checkpoint: {e}")
