@@ -26,7 +26,7 @@ jobs:
           pip install pyinstaller
       - name: Build executable
         run: |
-          pyinstaller --onefile subtranslate/__main__.py
+          pyinstaller --onefile src\subtranslate\__main__.py
       - name: Rename executable
         run: |
           Rename-Item -Path dist/__main__.exe -NewName subtranslate-v1.0.${{ github.run_number }}-windows.exe
