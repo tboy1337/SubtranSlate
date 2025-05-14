@@ -4,7 +4,7 @@ A powerful and flexible tool for translating subtitle files between languages. C
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-1.0.2-blue)
+![Version](https://img.shields.io/badge/version-1.0.3-blue)
 ![Python](https://img.shields.io/badge/python-3.6+-green)
 ![License](https://img.shields.io/badge/license-MIT-yellow)
 
@@ -17,11 +17,13 @@ A powerful and flexible tool for translating subtitle files between languages. C
 - [Quick Start](#quick-start)
 - [Usage Guide](#usage-guide)
   - [Command-Line Interface](#command-line-interface)
+  - [Encoding Conversion](#encoding-conversion)
   - [Examples](#examples)
   - [Programmatic Usage](#programmatic-usage)
 - [How it Works](#how-it-works)
 - [Rate Limiting Protection](#rate-limiting-protection)
 - [Supported Languages](#supported-languages)
+- [Supported Encodings](#supported-encodings)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
@@ -35,9 +37,10 @@ A powerful and flexible tool for translating subtitle files between languages. C
 - **Batch Processing**: Process multiple subtitle files in one operation
 - **Rate Limiting Protection**: Built-in exponential backoff and resume functionality
 - **Flexible Options**:
-  - Support for various text encodings (UTF-8, UTF-8-sig, etc.)
+  - Support for various text encodings (UTF-8, UTF-8-sig, TIS-620, etc.)
   - Optional Google Cloud Translation API integration
   - Display original and translated text together or only translations
+- **Encoding Conversion**: Convert subtitle files between different character encodings
 - **Cross-Platform**: Works on Windows, macOS, and Linux
 
 ## 🔧 Installation
@@ -95,17 +98,36 @@ python run.py input.srt output.srt -s en -t es
 
 ### Command-Line Interface
 
+The application provides two main commands:
+
+1. `translate` - Translate subtitle files (default command)
+2. `encode` - Convert subtitle files between different encodings
+
+#### Translate Command
+
 ```bash
-subtranslate [options] input_file output_file
+subtranslate translate [options] input_file output_file
 ```
 
 Or if running from source:
 
 ```bash
-python run.py [options] input_file output_file
+python run.py translate [options] input_file output_file
 ```
 
-#### CLI Options
+#### Encode Command
+
+```bash
+subtranslate encode [options] input_file
+```
+
+Or if running from source:
+
+```bash
+python run.py encode [options] input_file
+```
+
+#### CLI Options for Translation
 
 | Argument | Description |
 |----------|-------------|
@@ -124,6 +146,64 @@ python run.py [options] input_file output_file
 | `--service` | Translation service to use (default: google) |
 | `--verbose`, `-v` | Enable verbose logging |
 | `--no-resume` | Do not attempt to resume from previous translations |
+
+#### CLI Options for Encoding Conversion
+
+| Argument | Description |
+|----------|-------------|
+| `input` | Input subtitle file or directory containing subtitle files |
+| `--output-dir`, `-o` | Output directory for converted files (default: same as input) |
+| `--from-encoding`, `-f` | Source encoding (auto-detect if not specified) |
+| `--to-encoding`, `-t` | Target encodings (comma-separated list) |
+| `--all`, `-a` | Convert to all supported encodings |
+| `--recommended`, `-r` | Use recommended encodings based on language |
+| `--language`, `-l` | Language code for recommended encodings (default: en) |
+| `--list-encodings` | List all supported encodings |
+| `--batch` | Process input as directory containing multiple subtitle files |
+| `--pattern` | File pattern for batch processing (default: *.srt) |
+| `--verbose`, `-v` | Enable verbose logging |
+
+### Encoding Conversion
+
+SubtranSlate now includes a powerful encoding conversion system to handle subtitles in various character encodings, including TIS-620 for Thai subtitles and many other regional encodings.
+
+#### Basic Encoding Conversion
+
+Convert a subtitle file to TIS-620 encoding:
+
+```bash
+subtranslate encode sample.srt --to-encoding tis-620
+```
+
+#### Convert to Multiple Encodings
+
+Convert a subtitle file to multiple encodings at once:
+
+```bash
+subtranslate encode sample.srt --to-encoding "utf-8,tis-620,cp874,iso8859-11"
+```
+
+#### Use Recommended Encodings for a Language
+
+Convert using encodings recommended for Thai:
+
+```bash
+subtranslate encode sample.srt --recommended --language th
+```
+
+#### Convert All Files in a Directory
+
+Convert all subtitle files in a directory to TIS-620:
+
+```bash
+subtranslate encode subtitles/ --batch --to-encoding tis-620
+```
+
+#### List All Supported Encodings
+
+```bash
+subtranslate encode --list-encodings
+```
 
 ### Examples
 
@@ -333,19 +413,59 @@ For a complete list of language codes, see [Google Cloud Translation Languages](
 - For languages not using spaces (Chinese, Japanese, etc.), keep `space=False` (default)
 - For Chinese translations, the `jieba` library improves quality through word segmentation
 
+## 🔤 Supported Encodings
+
+SubtranSlate supports a wide range of character encodings for subtitle files:
+
+### Common Subtitle Encodings
+
+| Region | Encodings |
+|--------|-----------|
+| Thai | UTF-8, TIS-620, CP874, ISO8859-11 |
+| Chinese | UTF-8, GB2312, CP936 (Simplified), Big5, CP950 (Traditional) |
+| Japanese | UTF-8, Shift-JIS, EUC-JP, CP932 |
+| Korean | UTF-8, EUC-KR, CP949 |
+| Cyrillic | UTF-8, CP1251, KOI8-R, ISO8859-5 |
+| Arabic | UTF-8, CP1256, ISO8859-6 |
+| Hebrew | UTF-8, CP1255, ISO8859-8 |
+| Western European | UTF-8, CP1252, ISO8859-1, ISO8859-15 |
+| Central European | UTF-8, CP1250, ISO8859-2 |
+| Greek | UTF-8, CP1253, ISO8859-7 |
+| Turkish | UTF-8, CP1254, ISO8859-9 |
+| Vietnamese | UTF-8, CP1258 |
+
+### UTF-8 Variants
+
+- UTF-8 - Standard encoding for Unicode
+- UTF-8-sig - UTF-8 with Byte Order Mark (BOM)
+
+For the complete list of supported encodings, use the `subtranslate encode --list-encodings` command.
+
 ## ❓ Troubleshooting
 
 ### Encoding Issues
 
-If you encounter encoding problems:
+If you encounter encoding problems with subtitle files:
 
-```bash
-subtranslate sample.en.srt output.srt --encoding UTF-8-sig
-```
+1. Try auto-detecting the encoding:
+   ```bash
+   subtranslate encode problem_file.srt
+   ```
 
-### Character Limits
+2. Try a specific encoding for Asian languages:
+   ```bash
+   subtranslate translate input.srt output.srt --encoding cp874
+   ```
 
-For long subtitle files, be aware that Google Translate has character limits. The application automatically splits large files into smaller chunks.
+3. Convert to a different encoding:
+   ```bash
+   subtranslate encode input.srt --to-encoding utf-8-sig
+   ```
+
+4. For Thai subtitles specifically:
+   ```bash
+   subtranslate encode thai_subtitle.srt --to-encoding tis-620
+   ```
 
 ## 🤝 Contributing
 
