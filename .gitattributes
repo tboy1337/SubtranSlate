@@ -1,0 +1,5 @@
+# Enforce CRLF line endings for all files except bash scripts
+* eol=crlf
+
+# Bash scripts should use LF endings for Unix compatibility
+*.sh eol=lf

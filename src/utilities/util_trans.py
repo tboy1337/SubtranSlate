@@ -1,13 +1,14 @@
-import re
-import execjs
-import urllib.request
-import urllib.parse
-import urllib.error
 import json
-import time
-import requests
 import random
+import re
 import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+import execjs
+import requests
 
 
 class TkGenerator:
@@ -18,7 +19,8 @@ class TkGenerator:
     """
 
     def __init__(self):
-        self.ctx = execjs.compile("""
+        self.ctx = execjs.compile(
+            """
         function TL(a) {
         var k = "";
         var b = 406644;
@@ -54,7 +56,8 @@ class TkGenerator:
         }
         return a
     }
-    """)
+    """
+        )
 
     def get_tk(self, text: str) -> str:
         return self.ctx.call("TL", text)
@@ -63,12 +66,12 @@ class TkGenerator:
 class Translator:
     def __init__(self):
         self.user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.1 Safari/605.1.15',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:94.0) Gecko/20100101 Firefox/94.0',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36'
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.1 Safari/605.1.15",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:94.0) Gecko/20100101 Firefox/94.0",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36",
         ]
-        self.headers = {'User-Agent': random.choice(self.user_agents)}
+        self.headers = {"User-Agent": random.choice(self.user_agents)}
         self.tk_gen = TkGenerator()
         self.pattern = re.compile(r'\["(.*?)(?:\\n)')
         self.max_limited = 3500
@@ -81,10 +84,8 @@ class Translator:
     def __post(self, url, text):
         if self.debug:
             print(f"Trying URL: {url}")
-            
-        post_data = {
-            'q': text
-        }
+
+        post_data = {"q": text}
         try:
             # First try the requests library which is more reliable
             response = requests.post(url, data=post_data, headers=self.headers, timeout=10)
@@ -94,10 +95,10 @@ class Translator:
                 if self.debug:
                     print(f"HTTP Error: {response.status_code}, trying fallback method")
                 # Fall back to urllib if requests fails
-                data = urllib.parse.urlencode(post_data).encode(encoding='utf-8')
+                data = urllib.parse.urlencode(post_data).encode(encoding="utf-8")
                 request = urllib.request.Request(url=url, data=data, headers=self.headers)
                 response = urllib.request.urlopen(request, timeout=10)
-                return response.read().decode('utf-8')
+                return response.read().decode("utf-8")
         except Exception as e:
             if self.debug:
                 print(f"Translation error with URL {url}: {str(e)}")
@@ -107,18 +108,22 @@ class Translator:
         # Try multiple endpoints in sequence until one works
         endpoints = [
             # Direct Google Translate API
-            ("https://translate.googleapis.com/translate_a/single?client=gtx"
-             f"&sl={src_lang}&tl={target_lang}&dt=t&q={urllib.parse.quote(text)}"),
-            
+            (
+                "https://translate.googleapis.com/translate_a/single?client=gtx"
+                f"&sl={src_lang}&tl={target_lang}&dt=t&q={urllib.parse.quote(text)}"
+            ),
             # Alternative Google Translate endpoint
-            ("https://translate.google.com/translate_a/single?client=at"
-             f"&sl={src_lang}&tl={target_lang}&dt=t&q={urllib.parse.quote(text)}"),
-             
+            (
+                "https://translate.google.com/translate_a/single?client=at"
+                f"&sl={src_lang}&tl={target_lang}&dt=t&q={urllib.parse.quote(text)}"
+            ),
             # Classical Google translate service
-            ("https://translate.google.com/translate_a/single?client=webapp"
-             f"&sl={src_lang}&tl={target_lang}&dt=t&hl=en&q={urllib.parse.quote(text)}")
+            (
+                "https://translate.google.com/translate_a/single?client=webapp"
+                f"&sl={src_lang}&tl={target_lang}&dt=t&hl=en&q={urllib.parse.quote(text)}"
+            ),
         ]
-        
+
         # Try each endpoint in order
         for endpoint in endpoints:
             result = self.__post(endpoint, text)
@@ -131,7 +136,7 @@ class Translator:
                     if self.debug:
                         print(f"Invalid JSON response from {endpoint}")
                     continue
-        
+
         # If all endpoints fail, return a simple message
         if self.debug:
             print("All translation endpoints failed")
@@ -168,29 +173,33 @@ class Translator:
         """
         # Debug message to track progress
         print(f"Translating text from {src_lang} to {target_lang}...")
-        
+
         result = self.__translate(text, src_lang, target_lang)
         if not result:
             print("Translation failed. Please check your internet connection.")
             return text
-            
+
         try:
             obj_result = json.loads(result)
-            
+
             # Different response formats based on the endpoint
-            if isinstance(obj_result, list) and len(obj_result) > 0 and isinstance(obj_result[0], list):
+            if (
+                isinstance(obj_result, list)
+                and len(obj_result) > 0
+                and isinstance(obj_result[0], list)
+            ):
                 # Standard format from Google Translate API
                 list_sentence = [x[0] for x in obj_result[0] if x and len(x) > 0 and x[0]]
-                return ''.join(list_sentence)
-            elif 'sentences' in obj_result and isinstance(obj_result['sentences'], list):
+                return "".join(list_sentence)
+            elif "sentences" in obj_result and isinstance(obj_result["sentences"], list):
                 # Alternative format
-                list_sentence = [x['trans'] for x in obj_result['sentences'] if 'trans' in x]
-                return ''.join(list_sentence)
+                list_sentence = [x["trans"] for x in obj_result["sentences"] if "trans" in x]
+                return "".join(list_sentence)
             else:
                 if self.debug:
                     print(f"Unexpected response format: {obj_result}")
                 return text
-                
+
         except (json.JSONDecodeError, IndexError, TypeError, KeyError) as e:
             if self.debug:
                 print(f"Error parsing translation result: {e}")
@@ -207,47 +216,47 @@ class Translator:
         """
         if not text_list:
             return ""
-            
-        translated = ''
+
+        translated = ""
         last_idx = 0
         total_length = 0
-        
+
         print(f"Translating {len(text_list)} lines from {src_lang} to {target_lang}...")
-        
+
         for i in range(len(text_list)):
             total_length += len(text_list[i])
             if total_length > self.max_limited:
-                chunk = '\n'.join(text_list[last_idx:i])
+                chunk = "\n".join(text_list[last_idx:i])
                 print(f"Translating chunk ({len(chunk)} characters)...")
                 translated_chunk = self.translate(chunk, src_lang, target_lang)
                 translated += translated_chunk
-                translated += '\n'
+                translated += "\n"
                 time.sleep(1.5)  # Sleep a bit longer to avoid rate limiting
                 last_idx = i
                 total_length = 0
-                
+
         # Translate the last chunk
         if last_idx < len(text_list):
-            chunk = '\n'.join(text_list[last_idx:])
+            chunk = "\n".join(text_list[last_idx:])
             print(f"Translating final chunk ({len(chunk)} characters)...")
             translated_chunk = self.translate(chunk, src_lang, target_lang)
             translated += translated_chunk
-            
+
         return translated
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Enable debug mode for testing
     t = Translator()
     t.set_debug(True)
-    
+
     raw_text = "The Translation API's recognition engine supports a wide variety of languages for the Phrase-Based \
     Machine Translation (PBMT) and Neural Machine Translation (NMT) models. \nThese languages are specified within a \
     recognition request using language code parameters as noted on this page. \nMost language code parameters conform \
     to ISO-639-1 identifiers, except where noted."
-    
+
     print("Testing translation to Chinese...")
-    print(t.translate(raw_text, src_lang='en', target_lang='zh-CN'))
-    
+    print(t.translate(raw_text, src_lang="en", target_lang="zh-CN"))
+
     print("\nTesting translation to Japanese...")
-    print(t.translate(raw_text, src_lang='en', target_lang='ja')) 
+    print(t.translate(raw_text, src_lang="en", target_lang="ja"))

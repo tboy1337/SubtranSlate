@@ -1,1 +1,1 @@
-"""Test suite for SubtranSlate package.""" 
+"""Test suite for SubtranSlate package."""

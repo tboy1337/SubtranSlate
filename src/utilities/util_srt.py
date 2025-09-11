@@ -1,4 +1,5 @@
 import re
+
 try:
     import jieba
 except ImportError:
@@ -8,7 +9,7 @@ except ImportError:
 
 class Splitter:
     def __init__(self):
-        self.pattern = re.compile(r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s')
+        self.pattern = re.compile(r"(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s")
 
     def split(self, text):
         return self.pattern.split(text)
@@ -24,9 +25,9 @@ def triple_r(sub_list):
     """
     dialog_idx = []
     current_idx = 0
-    plain_text = ''
+    plain_text = ""
     for sub in sub_list:
-        sub.content = sub.content.replace('\n', ' ') + ' '  # remove line break
+        sub.content = sub.content.replace("\n", " ") + " "  # remove line break
         current_idx += len(sub.content)
         dialog_idx.append(current_idx)  # record the position of dialogue in the plain text
         plain_text = plain_text + sub.content
@@ -103,8 +104,8 @@ def compute_mass_list(dialog_idx, sen_idx):
 
 
 def get_the_nearest_space(sentence: str, current_idx: int):
-    left_idx = sentence[:current_idx].rfind(' ')
-    right_idx = sentence[current_idx:].find(' ')
+    left_idx = sentence[:current_idx].rfind(" ")
+    right_idx = sentence[current_idx:].find(" ")
 
     if current_idx - left_idx > right_idx:
         return right_idx + current_idx + 1
@@ -134,7 +135,7 @@ def get_the_nearest_split_sen_cn(sentence: str, current_idx: int, last_idx: int,
         if total_len >= target_idx:
             break
     if word_idx < len(words):
-        if words[word_idx] == '\uff0c':
+        if words[word_idx] == "\uff0c":
             total_len += len(words[word_idx])
 
     return total_len + last_idx
@@ -150,7 +151,7 @@ def sen_list2dialog_list(sen_list, mass_list, space=False, cn=False) -> list:
     :return: dialog_list
     """
     dialog_num = mass_list[-1][-1][0]
-    dialog_list = [''] * dialog_num
+    dialog_list = [""] * dialog_num
     for k in range(len(sen_list)):
         sentence = sen_list[k]
         record = mass_list[k]
@@ -158,7 +159,7 @@ def sen_list2dialog_list(sen_list, mass_list, space=False, cn=False) -> list:
         total_dialog_of_sentence = len(record)
 
         if total_dialog_of_sentence == 1:
-            dialog_list[record[0][0]-1] += sentence[0:record[0][1]]
+            dialog_list[record[0][0] - 1] += sentence[0 : record[0][1]]
 
         else:
             origin_len = record[-1][1]
@@ -180,6 +181,6 @@ def sen_list2dialog_list(sen_list, mass_list, space=False, cn=False) -> list:
                     dialog_list[record[l][0] - 1] += sentence[last_idx:current_idx]
                     last_idx = current_idx
 
-            dialog_list[record[-1][0]-1] += sentence[last_idx:]
+            dialog_list[record[-1][0] - 1] += sentence[last_idx:]
 
-    return dialog_list 
+    return dialog_list
