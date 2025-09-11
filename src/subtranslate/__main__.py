@@ -12,10 +12,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 # Import here to avoid importing the heavy modules if just getting version
 # pylint: disable=wrong-import-position
-from subtranslate import __version__
+from . import __version__
 
 
-def main():
+def main() -> int:
     """Entry point for the application."""
     parser = argparse.ArgumentParser(
         description=f"SubtranSlate v{__version__} - A tool for translating subtitle files."
@@ -33,9 +33,9 @@ def main():
 
     # Import here to avoid circular imports
     # pylint: disable=import-outside-toplevel
-    from subtranslate.cli import main as cli_main
+    from .cli import main as cli_main
 
-    return cli_main(args.remainder)
+    return int(cli_main(args.remainder))
 
 
 if __name__ == "__main__":

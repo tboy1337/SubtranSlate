@@ -6,9 +6,23 @@ import logging
 import os
 import re
 from datetime import timedelta
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Protocol, Tuple, Union
 
 import srt
+
+
+class SubtitleLike(Protocol):
+    """Protocol for subtitle objects with required attributes."""
+
+    index: int
+    start: timedelta
+    end: timedelta
+    content: str
+    proprietary: str
+
+
+# Type alias for better clarity
+SubtitleList = List[SubtitleLike]
 
 # Configure logging
 logging.basicConfig(
@@ -23,21 +37,23 @@ try:
     JIEBA_AVAILABLE = True
 except ImportError:
     JIEBA_AVAILABLE = False
-    logger.warning("Jieba library not found. Chinese segmentation may not work correctly.")
+    logger.warning(
+        "Jieba library not found. Chinese segmentation may not work correctly."
+    )
 
 
 class SubtitleError(Exception):
     """Exception raised for subtitle processing errors."""
 
-    pass
-
 
 class Splitter:
     """Sentence splitter for text processing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Improved regex pattern for sentence splitting
-        self.pattern = re.compile(r"(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<!\b[A-Za-z]\.)(?<=\.|\?|\!)\s")
+        self.pattern = re.compile(
+            r"(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<!\b[A-Za-z]\.)(?<=\.|\?|\!)\s"
+        )
 
     def split(self, text: str) -> List[str]:
         """
@@ -62,10 +78,10 @@ class Splitter:
 class SubtitleProcessor:
     """Process subtitle files for translation."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.splitter = Splitter()
 
-    def parse_file(self, file_path: str, encoding: str = "UTF-8") -> List[srt.Subtitle]:
+    def parse_file(self, file_path: str, encoding: str = "UTF-8") -> SubtitleList:
         """
         Parse an SRT file into subtitle objects.
 
@@ -87,20 +103,24 @@ class SubtitleProcessor:
                 content = srt_file.read()
                 subtitle_generator = srt.parse(content)
                 return list(subtitle_generator)
-        except UnicodeDecodeError:
-            logger.error("Failed to decode file with encoding %s. Try another encoding.", encoding)
-            raise SubtitleError(
-                f"Failed to decode subtitle file with encoding {encoding}. Try UTF-8-sig or another encoding."
+        except UnicodeDecodeError as exc:
+            logger.error(
+                "Failed to decode file with encoding %s. Try another encoding.",
+                encoding,
             )
+            raise SubtitleError(
+                f"Failed to decode subtitle file with encoding {encoding}. "
+                "Try UTF-8-sig or another encoding."
+            ) from exc
         except srt.SRTParseError as e:
             logger.error("Failed to parse SRT file: %s", e)
-            raise SubtitleError(f"Failed to parse SRT file: {e}")
+            raise SubtitleError(f"Failed to parse SRT file: {e}") from e
         except Exception as e:
             logger.error("Error reading subtitle file: %s", e)
-            raise SubtitleError(f"Error reading subtitle file: {e}")
+            raise SubtitleError(f"Error reading subtitle file: {e}") from e
 
     def save_file(
-        self, subtitles: List[srt.Subtitle], file_path: str, encoding: str = "UTF-8"
+        self, subtitles: SubtitleList, file_path: str, encoding: str = "UTF-8"
     ) -> None:
         """
         Save subtitles to an SRT file.
@@ -114,9 +134,6 @@ class SubtitleProcessor:
             SubtitleError: If file can't be saved
         """
         try:
-            from datetime import timedelta
-
-            import srt
 
             # Ensure subtitles are proper srt.Subtitle objects
             valid_subtitles = []
@@ -131,8 +148,8 @@ class SubtitleProcessor:
                             content=getattr(sub, "content", ""),
                         )
                         valid_subtitles.append(valid_sub)
-                    except Exception as e:
-                        logger.warning("Failed to convert subtitle: %s", e)
+                    except (AttributeError, TypeError, ValueError) as exc:
+                        logger.warning("Failed to convert subtitle: %s", exc)
                 else:
                     valid_subtitles.append(sub)
 
@@ -141,9 +158,9 @@ class SubtitleProcessor:
             logger.info("Saved subtitles to %s", file_path)
         except Exception as e:
             logger.error("Failed to save subtitles: %s", e)
-            raise SubtitleError(f"Failed to save subtitles: {e}")
+            raise SubtitleError(f"Failed to save subtitles: {e}") from e
 
-    def triple_r(self, subtitle_list: List[srt.Subtitle]) -> Tuple[str, List[int]]:
+    def triple_r(self, subtitle_list: SubtitleList) -> Tuple[str, List[int]]:
         """
         Remove line breaks, reconstruct plain text, and record dialogue indices.
 
@@ -204,7 +221,7 @@ class SubtitleProcessor:
         i = 0
         j = 1
         mass_list = []
-        one_sentence = []
+        one_sentence: list[tuple[int, int]] = []
 
         while i < len(dialog_idx):
             if dialog_idx[i] > sen_idx[j]:
@@ -253,8 +270,8 @@ class SubtitleProcessor:
         # Choose the nearest
         if current_idx - left_idx > right_idx:
             return right_idx + current_idx + 1
-        else:
-            return left_idx + 1
+
+        return left_idx + 1
 
     def get_nearest_split_cn(
         self, sentence: str, current_idx: int, last_idx: int, scope: int = 6
@@ -289,8 +306,8 @@ class SubtitleProcessor:
             word_idx = 0
             target_idx = current_idx - last_idx
 
-            for w in words:
-                total_len += len(w)
+            for word in words:
+                total_len += len(word)
                 word_idx += 1
                 if total_len >= target_idx:
                     break
@@ -300,7 +317,7 @@ class SubtitleProcessor:
                 total_len += len(words[word_idx])
 
             return total_len + last_idx
-        except Exception as e:
+        except (AttributeError, RuntimeError) as e:
             logger.error("Error in Chinese segmentation: %s", e)
             return current_idx
 
@@ -309,7 +326,7 @@ class SubtitleProcessor:
         sen_list: List[str],
         mass_list: List[List[Tuple[int, int]]],
         space: bool = False,
-        cn: bool = False,
+        is_chinese: bool = False,
     ) -> List[str]:
         """
         Convert sentence list to dialogue list.
@@ -318,7 +335,7 @@ class SubtitleProcessor:
             sen_list: List of sentences
             mass_list: Mapping of sentences to dialogues
             space: Whether target language uses spaces
-            cn: Whether target language is Chinese
+            is_chinese: Whether target language is Chinese
 
         Returns:
             List of dialogues
@@ -334,16 +351,17 @@ class SubtitleProcessor:
 
         dialog_list = [""] * dialog_num
 
-        for k in range(len(sen_list)):
-            if k >= len(mass_list):
-                logger.warning(f"Mass list index out of range: {k} >= {len(mass_list)}")
+        for sen_idx, sentence in enumerate(sen_list):
+            if sen_idx >= len(mass_list):
+                logger.warning(
+                    "Mass list index out of range: %d >= %d", sen_idx, len(mass_list)
+                )
                 break
 
-            sentence = sen_list[k]
-            record = mass_list[k]
+            record = mass_list[sen_idx]
 
             if not record:
-                logger.warning(f"Empty record for sentence {k}")
+                logger.warning("Empty record for sentence %d", sen_idx)
                 continue
 
             total_dialog_of_sentence = len(record)
@@ -354,27 +372,33 @@ class SubtitleProcessor:
             else:
                 # Complex case: one sentence spans multiple dialogues
                 if not record:
-                    logger.warning(f"Empty record for sentence {k}")
+                    logger.warning("Empty record for sentence %d", sen_idx)
                     continue
 
                 origin_len = record[-1][1]
                 translated_len = len(sentence)
 
                 last_idx = 0
-                for l in range(len(record) - 1):
-                    current_idx = int(translated_len * record[l][1] / origin_len)
+                for record_idx in range(len(record) - 1):
+                    current_idx = int(
+                        translated_len * record[record_idx][1] / origin_len
+                    )
 
                     # Different splitting strategies based on language type
-                    if space and not cn:
+                    if space and not is_chinese:
                         # Space-delimited language: split at word boundaries
                         current_idx = self.get_nearest_space(sentence, current_idx)
-                    elif cn:
+                    elif is_chinese:
                         # Chinese: use jieba to split at word boundaries
-                        current_idx = self.get_nearest_split_cn(sentence, current_idx, last_idx)
+                        current_idx = self.get_nearest_split_cn(
+                            sentence, current_idx, last_idx
+                        )
 
                     # Add segment to dialogue
-                    if record[l][0] - 1 < len(dialog_list):
-                        dialog_list[record[l][0] - 1] += sentence[last_idx:current_idx]
+                    if record[record_idx][0] - 1 < len(dialog_list):
+                        dialog_list[record[record_idx][0] - 1] += sentence[
+                            last_idx:current_idx
+                        ]
                     last_idx = current_idx
 
                 # Add last segment
@@ -384,8 +408,8 @@ class SubtitleProcessor:
         return dialog_list
 
     def simple_translate_subtitles(
-        self, subtitles: List[srt.Subtitle], translated_texts: List[str], both: bool = True
-    ) -> List[srt.Subtitle]:
+        self, subtitles: SubtitleList, translated_texts: List[str], both: bool = True
+    ) -> SubtitleList:
         """
         Apply translated texts to subtitles (simple mode).
 
@@ -420,8 +444,8 @@ class SubtitleProcessor:
         return result
 
     def advanced_translate_subtitles(
-        self, subtitles: List[srt.Subtitle], translated_dialogs: List[str], both: bool = True
-    ) -> List[srt.Subtitle]:
+        self, subtitles: SubtitleList, translated_dialogs: List[str], both: bool = True
+    ) -> SubtitleList:
         """
         Apply translated dialogues to subtitles (advanced mode).
 
@@ -455,7 +479,9 @@ class SubtitleProcessor:
 
         return result
 
-    def to_serialized(self, subtitles: List[Any]) -> List[Dict[str, Any]]:
+    def to_serialized(
+        self, subtitles: SubtitleList
+    ) -> List[Dict[str, Union[str, timedelta, int, None]]]:
         """
         Convert subtitle objects to a serializable format for checkpointing.
 
@@ -478,7 +504,9 @@ class SubtitleProcessor:
             )
         return serialized
 
-    def from_serialized(self, serialized: List[Dict[str, Any]]) -> List[Any]:
+    def from_serialized(
+        self, serialized: List[Dict[str, Union[str, None]]]
+    ) -> SubtitleList:
         """
         Reconstruct subtitle objects from serialized format.
 
@@ -488,7 +516,7 @@ class SubtitleProcessor:
         Returns:
             List of subtitle objects
         """
-        import srt
+        # srt module already imported at module level
 
         subtitles = []
         for data in serialized:

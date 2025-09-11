@@ -5,7 +5,6 @@ Supports Google Translate and other translation services.
 
 import json
 import logging
-import os
 import random
 import re
 import time
@@ -13,7 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Callable, List, Optional
 
 import execjs
 import requests
@@ -28,13 +27,9 @@ logger = logging.getLogger(__name__)
 class TranslationError(Exception):
     """Exception raised for translation errors."""
 
-    pass
-
 
 class RateLimitError(TranslationError):
     """Exception raised specifically for rate limiting errors."""
-
-    pass
 
 
 class Translator(ABC):
@@ -43,23 +38,28 @@ class Translator(ABC):
     @abstractmethod
     def translate(self, text: str, src_lang: str, target_lang: str) -> str:
         """Translate a text from source language to target language."""
-        pass
 
     @abstractmethod
     def translate_lines(
-        self, text_list: List[str], src_lang: str, target_lang: str, progress_callback=None
+        self,
+        text_list: List[str],
+        src_lang: str,
+        target_lang: str,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
     ) -> str:
         """Translate a list of text lines."""
-        pass
 
 
 class GoogleTranslator(Translator):
     """Google Translate implementation."""
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None) -> None:
         self.api_key = api_key
         self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36"
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36"
+            )
         }
         self.tk_gen = TkGenerator()
         self.pattern = re.compile(r'\["(.*?)(?:\\n)')
@@ -73,10 +73,22 @@ class GoogleTranslator(Translator):
 
         # Alternative user agents to rotate
         self.user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.1 Safari/605.1.15",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:94.0) Gecko/20100101 Firefox/94.0",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36",
+            (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36"
+            ),
+            (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+                "(KHTML, like Gecko) Version/15.1 Safari/605.1.15"
+            ),
+            (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:94.0) "
+                "Gecko/20100101 Firefox/94.0"
+            ),
+            (
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36"
+            ),
         ]
 
     def _rotate_user_agent(self) -> None:
@@ -100,12 +112,12 @@ class GoogleTranslator(Translator):
         jitter_amount = backoff * self.jitter
         backoff = backoff + random.uniform(-jitter_amount, jitter_amount)
 
-        return max(backoff, 0.1)  # Ensure minimum delay of 0.1 seconds
+        return max(float(backoff), 0.1)  # Ensure minimum delay of 0.1 seconds
 
     def __post(self, url: str, text: str) -> str:
         """Post a request to the translation service with retry mechanism."""
         retry_count = 0
-        last_error = None
+        last_error: Optional[Exception] = None
 
         while retry_count <= self.max_retries:
             try:
@@ -115,10 +127,14 @@ class GoogleTranslator(Translator):
 
                 post_data = {"q": text}
                 data = urllib.parse.urlencode(post_data).encode(encoding="utf-8")
-                request = urllib.request.Request(url=url, data=data, headers=self.headers)
+                request = urllib.request.Request(
+                    url=url, data=data, headers=self.headers
+                )
 
-                response = urllib.request.urlopen(request, timeout=10)
-                return response.read().decode("utf-8")
+                with urllib.request.urlopen(request, timeout=10) as response:
+                    raw_data = response.read()
+                    decoded_text: str = raw_data.decode("utf-8")
+                    return decoded_text
 
             except urllib.error.HTTPError as e:
                 last_error = e
@@ -128,20 +144,26 @@ class GoogleTranslator(Translator):
                     if retry_count <= self.max_retries:
                         backoff_time = self._calculate_backoff(retry_count)
                         logger.warning(
-                            f"Rate limit or server error detected (HTTP {e.code}). "
-                            f"Retry {retry_count}/{self.max_retries} after {backoff_time:.2f}s backoff."
+                            "Rate limit or server error detected (HTTP %d). "
+                            "Retry %d/%d after %.2fs backoff.",
+                            e.code,
+                            retry_count,
+                            self.max_retries,
+                            backoff_time,
                         )
                         time.sleep(backoff_time)
                         continue
-                    else:
-                        logger.error(f"Max retries reached after rate limit (HTTP {e.code})")
-                        raise RateLimitError(
-                            f"Translation service rate limited (HTTP {e.code}). Try again later."
-                        )
-                else:
-                    # For other HTTP errors, fail immediately
-                    logger.error(f"HTTP Error: {e}")
-                    raise TranslationError(f"Translation service returned HTTP error: {e}")
+                    logger.error(
+                        "Max retries reached after rate limit (HTTP %d)", e.code
+                    )
+                    raise RateLimitError(
+                        f"Translation service rate limited (HTTP {e.code}). Try again later."
+                    ) from e
+                # For other HTTP errors, fail immediately
+                logger.error("HTTP Error: %s", e)
+                raise TranslationError(
+                    f"Translation service returned HTTP error: {e}"
+                ) from e
 
             except urllib.error.URLError as e:
                 last_error = e
@@ -150,16 +172,20 @@ class GoogleTranslator(Translator):
                 if retry_count <= self.max_retries:
                     backoff_time = self._calculate_backoff(retry_count)
                     logger.warning(
-                        f"Network error: {e}. "
-                        f"Retry {retry_count}/{self.max_retries} after {backoff_time:.2f}s backoff."
+                        "Network error: %s. Retry %d/%d after %.2fs backoff.",
+                        e,
+                        retry_count,
+                        self.max_retries,
+                        backoff_time,
                     )
                     time.sleep(backoff_time)
                     continue
-                else:
-                    logger.error(f"Max retries reached after network error: {e}")
-                    raise TranslationError(
-                        f"Failed to connect to translation service after {self.max_retries} attempts: {e}"
-                    )
+
+                logger.error("Max retries reached after network error: %s", e)
+                raise TranslationError(
+                    f"Failed to connect to translation service after "
+                    f"{self.max_retries} attempts: {e}"
+                ) from e
 
             except Exception as e:
                 last_error = e
@@ -168,73 +194,97 @@ class GoogleTranslator(Translator):
                 if retry_count <= self.max_retries:
                     backoff_time = self._calculate_backoff(retry_count)
                     logger.warning(
-                        f"Unexpected error: {e}. "
-                        f"Retry {retry_count}/{self.max_retries} after {backoff_time:.2f}s backoff."
+                        "Unexpected error: %s. Retry %d/%d after %.2fs backoff.",
+                        e,
+                        retry_count,
+                        self.max_retries,
+                        backoff_time,
                     )
                     time.sleep(backoff_time)
                     continue
-                else:
-                    logger.error(f"Max retries reached after unexpected error: {e}")
-                    raise TranslationError(f"Unexpected translation error: {e}")
+
+                logger.error("Max retries reached after unexpected error: %s", e)
+                raise TranslationError(f"Unexpected translation error: {e}") from e
 
         # If we reach this point, all retries have failed
         if last_error:
-            raise TranslationError(f"All translation attempts failed: {last_error}")
-        else:
-            raise TranslationError("All translation attempts failed for unknown reasons")
+            raise TranslationError(
+                f"All translation attempts failed: {last_error}"
+            ) from last_error
+
+        raise TranslationError("All translation attempts failed for unknown reasons")
 
     def __translate(self, text: str, src_lang: str, target_lang: str) -> str:
         """Internal translation method."""
         if self.api_key:
             return self.__translate_with_api(text, src_lang, target_lang)
-        else:
-            return self.__translate_without_api(text, src_lang, target_lang)
+
+        return self.__translate_without_api(text, src_lang, target_lang)
 
     def __translate_with_api(self, text: str, src_lang: str, target_lang: str) -> str:
         """Translate using the official Google Cloud Translation API."""
         retry_count = 0
-        last_error = None
+        last_error: Optional[Exception] = None
 
         while retry_count <= self.max_retries:
             try:
                 url = f"https://translation.googleapis.com/language/translate/v2?key={self.api_key}"
-                payload = {"q": text, "source": src_lang, "target": target_lang, "format": "text"}
-                response = requests.post(url, data=payload)
+                payload = {
+                    "q": text,
+                    "source": src_lang,
+                    "target": target_lang,
+                    "format": "text",
+                }
+                response = requests.post(url, data=payload, timeout=30)
 
                 if response.status_code == 429:  # Rate limit error
                     retry_count += 1
                     if retry_count <= self.max_retries:
                         backoff_time = self._calculate_backoff(retry_count)
                         logger.warning(
-                            f"API rate limit detected. "
-                            f"Retry {retry_count}/{self.max_retries} after {backoff_time:.2f}s backoff."
+                            "API rate limit detected. Retry %d/%d after %.2fs backoff.",
+                            retry_count,
+                            self.max_retries,
+                            backoff_time,
                         )
                         time.sleep(backoff_time)
                         continue
-                    else:
-                        logger.error("Max retries reached after API rate limit")
-                        raise RateLimitError("Translation API rate limited. Try again later.")
-                elif response.status_code >= 500:  # Server error
+
+                    logger.error("Max retries reached after API rate limit")
+                    raise RateLimitError(
+                        "Translation API rate limited. Try again later."
+                    )
+                if response.status_code >= 500:  # Server error
                     retry_count += 1
                     if retry_count <= self.max_retries:
                         backoff_time = self._calculate_backoff(retry_count)
                         logger.warning(
-                            f"API server error ({response.status_code}). "
-                            f"Retry {retry_count}/{self.max_retries} after {backoff_time:.2f}s backoff."
+                            "API server error (%d). Retry %d/%d after %.2fs backoff.",
+                            response.status_code,
+                            retry_count,
+                            self.max_retries,
+                            backoff_time,
                         )
                         time.sleep(backoff_time)
                         continue
-                    else:
-                        logger.error(
-                            f"Max retries reached after API server error: {response.status_code}"
-                        )
-                        raise TranslationError(f"Translation API server error: {response.text}")
-                elif response.status_code != 200:  # Other errors
-                    logger.error(f"API Error: {response.text}")
+
+                    logger.error(
+                        "Max retries reached after API server error: %d",
+                        response.status_code,
+                    )
+                    raise TranslationError(
+                        f"Translation API server error: {response.text}"
+                    )
+                if response.status_code != 200:  # Other errors
+                    logger.error("API Error: %s", response.text)
                     raise TranslationError(f"Translation API error: {response.text}")
 
-                result = response.json()
-                return result["data"]["translations"][0]["translatedText"]
+                result_data = response.json()
+                if isinstance(result_data, dict) and "data" in result_data:
+                    translations = result_data["data"].get("translations", [])
+                    if translations and len(translations) > 0:
+                        return str(translations[0].get("translatedText", ""))
+                raise TranslationError("Unexpected API response format")
 
             except requests.RequestException as e:
                 last_error = e
@@ -243,16 +293,20 @@ class GoogleTranslator(Translator):
                 if retry_count <= self.max_retries:
                     backoff_time = self._calculate_backoff(retry_count)
                     logger.warning(
-                        f"API request error: {e}. "
-                        f"Retry {retry_count}/{self.max_retries} after {backoff_time:.2f}s backoff."
+                        "API request error: %s. Retry %d/%d after %.2fs backoff.",
+                        e,
+                        retry_count,
+                        self.max_retries,
+                        backoff_time,
                     )
                     time.sleep(backoff_time)
                     continue
-                else:
-                    logger.error(f"Max retries reached after API request error: {e}")
-                    raise TranslationError(
-                        f"Failed to connect to Google Translation API after {self.max_retries} attempts: {e}"
-                    )
+
+                logger.error("Max retries reached after API request error: %s", e)
+                raise TranslationError(
+                    f"Failed to connect to Google Translation API after "
+                    f"{self.max_retries} attempts: {e}"
+                ) from e
 
             except KeyError as e:
                 last_error = e
@@ -261,14 +315,19 @@ class GoogleTranslator(Translator):
                 if retry_count <= self.max_retries:
                     backoff_time = self._calculate_backoff(retry_count)
                     logger.warning(
-                        f"API response parsing error: {e}. "
-                        f"Retry {retry_count}/{self.max_retries} after {backoff_time:.2f}s backoff."
+                        "API response parsing error: %s. Retry %d/%d after %.2fs backoff.",
+                        e,
+                        retry_count,
+                        self.max_retries,
+                        backoff_time,
                     )
                     time.sleep(backoff_time)
                     continue
-                else:
-                    logger.error(f"Max retries reached after API response parsing error: {e}")
-                    raise TranslationError(f"Failed to parse API response: {e}")
+
+                logger.error(
+                    "Max retries reached after API response parsing error: %s", e
+                )
+                raise TranslationError(f"Failed to parse API response: {e}") from e
 
             except Exception as e:
                 last_error = e
@@ -277,35 +336,44 @@ class GoogleTranslator(Translator):
                 if retry_count <= self.max_retries:
                     backoff_time = self._calculate_backoff(retry_count)
                     logger.warning(
-                        f"Unexpected API error: {e}. "
-                        f"Retry {retry_count}/{self.max_retries} after {backoff_time:.2f}s backoff."
+                        "Unexpected API error: %s. Retry %d/%d after %.2fs backoff.",
+                        e,
+                        retry_count,
+                        self.max_retries,
+                        backoff_time,
                     )
                     time.sleep(backoff_time)
                     continue
-                else:
-                    logger.error(f"Max retries reached after unexpected API error: {e}")
-                    raise TranslationError(f"Unexpected translation API error: {e}")
+
+                logger.error("Max retries reached after unexpected API error: %s", e)
+                raise TranslationError(f"Unexpected translation API error: {e}") from e
 
         # If we reach this point, all retries have failed
         if last_error:
-            raise TranslationError(f"All API translation attempts failed: {last_error}")
-        else:
-            raise TranslationError("All API translation attempts failed for unknown reasons")
+            raise TranslationError(
+                f"All API translation attempts failed: {last_error}"
+            ) from last_error
 
-    def __translate_without_api(self, text: str, src_lang: str, target_lang: str) -> str:
+        raise TranslationError(
+            "All API translation attempts failed for unknown reasons"
+        )
+
+    def __translate_without_api(
+        self, text: str, src_lang: str, target_lang: str
+    ) -> str:
         """Translate using the free Google Translate service."""
-        tk = self.tk_gen.get_tk(text)
+        token_key = self.tk_gen.get_tk(text)
         # Try different Google Translate domains if one fails
         domains = ["translate.google.com", "translate.google.cn"]
 
         # Try each domain
-        last_error = None
+        last_error: Optional[Exception] = None
         for domain in domains:
             url = (
                 f"http://{domain}/translate_a/single?client=t"
                 f"&sl={src_lang}&tl={target_lang}&dt=at&dt=bd&dt=ex&dt=ld&dt=md&dt=qca"
                 f"&dt=rw&dt=rm&dt=ss&dt=t&ie=UTF-8&oe=UTF-8&clearbtn=1&otf=1&pc=1"
-                f"&srcrom=0&ssel=0&tsel=0&kc=1&tk={tk}"
+                f"&srcrom=0&ssel=0&tsel=0&kc=1&tk={token_key}"
             )
 
             try:
@@ -313,14 +381,20 @@ class GoogleTranslator(Translator):
                 return result
             except TranslationError as e:
                 last_error = e
-                logger.warning(f"Translation failed with domain {domain}: {e}. Trying next domain.")
+                logger.warning(
+                    "Translation failed with domain %s: %s. Trying next domain.",
+                    domain,
+                    e,
+                )
                 continue
 
         # If all domains failed, raise the last error
         if last_error:
             raise last_error
-        else:
-            raise TranslationError("All Google Translate domains failed for unknown reasons")
+
+        raise TranslationError(
+            "All Google Translate domains failed for unknown reasons"
+        )
 
     def translate_raw(self, text: str, src_lang: str, target_lang: str) -> str:
         """
@@ -364,18 +438,22 @@ class GoogleTranslator(Translator):
             obj_result = json.loads(result)
             list_sentence = [x[0] for x in obj_result[0][:-1]]
             return "".join(list_sentence)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
             logger.error("Failed to decode translation response")
-            raise TranslationError("Failed to decode translation response")
-        except (IndexError, KeyError):
+            raise TranslationError("Failed to decode translation response") from exc
+        except (IndexError, KeyError) as exc:
             logger.error("Failed to parse translation response")
-            raise TranslationError("Failed to parse translation response")
+            raise TranslationError("Failed to parse translation response") from exc
         except Exception as e:
-            logger.error(f"Translation error: {e}")
-            raise TranslationError(f"Translation error: {e}")
+            logger.error("Translation error: %s", e)
+            raise TranslationError(f"Translation error: {e}") from e
 
     def translate_lines(
-        self, text_list: List[str], src_lang: str, target_lang: str, progress_callback=None
+        self,
+        text_list: List[str],
+        src_lang: str,
+        target_lang: str,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
     ) -> str:
         """
         Translate a list of text lines with checkpoint support.
@@ -396,127 +474,195 @@ class GoogleTranslator(Translator):
         if not text_list:
             return ""
 
-        translated = ""
-        last_idx = 0
-        total_length = 0
-
         # Track progress to allow resuming on failure
-        progress = []
+        progress: List[tuple[tuple[int, int], bool]] = []
 
         try:
-            for i in range(len(text_list)):
-                total_length += len(text_list[i])
-                if total_length > self.max_limited:
-                    batch = "\n".join(text_list[last_idx:i])
-                    if batch.strip():  # Only translate non-empty batches
-                        # Track progress before translation attempt
-                        checkpoint = (last_idx, i)
-
-                        try:
-                            batch_translation = self.translate(batch, src_lang, target_lang)
-                            translated += batch_translation
-                            translated += "\n"
-
-                            # Record successful translation
-                            progress.append((checkpoint, True))
-
-                            # Call progress callback if provided
-                            if progress_callback:
-                                progress_callback(i, len(text_list), translated)
-
-                        except RateLimitError:
-                            # Special handling for rate limit errors - longer backoff
-                            logger.warning(
-                                "Rate limit detected during batch translation. Backing off for 30 seconds."
-                            )
-                            time.sleep(30)  # Extended sleep for rate limit
-
-                            # Try again with the same batch
-                            batch_translation = self.translate(batch, src_lang, target_lang)
-                            translated += batch_translation
-                            translated += "\n"
-
-                            # Record successful retry
-                            progress.append((checkpoint, True))
-
-                            # Call progress callback if provided
-                            if progress_callback:
-                                progress_callback(i, len(text_list), translated)
-
-                        except TranslationError as e:
-                            # Record failed translation
-                            progress.append((checkpoint, False))
-                            raise e
-
-                    # Adaptive delay based on recent translation history and batch size
-                    delay = 1 + (len(batch) / 2000)  # Longer delays for larger batches
-                    logger.info(
-                        f"Pausing for {delay:.2f}s between translation batches to avoid rate limiting"
-                    )
-                    time.sleep(delay)
-
-                    last_idx = i
-                    total_length = 0
-
-            # Translate the last batch
-            last_batch = "\n".join(text_list[last_idx:])
-            if last_batch.strip():  # Only translate non-empty batches
-                # Track final batch
-                final_checkpoint = (last_idx, len(text_list))
-
-                try:
-                    translated += self.translate(last_batch, src_lang, target_lang)
-                    # Record successful final batch
-                    progress.append((final_checkpoint, True))
-
-                    # Final progress callback
-                    if progress_callback:
-                        progress_callback(len(text_list), len(text_list), translated)
-
-                except RateLimitError:
-                    # Special handling for rate limit errors
-                    logger.warning(
-                        "Rate limit detected during final batch translation. Backing off for 30 seconds."
-                    )
-                    time.sleep(30)
-
-                    # Try again with the final batch
-                    translated += self.translate(last_batch, src_lang, target_lang)
-                    # Record successful retry of final batch
-                    progress.append((final_checkpoint, True))
-
-                    # Final progress callback
-                    if progress_callback:
-                        progress_callback(len(text_list), len(text_list), translated)
-
-                except TranslationError as e:
-                    # Record failed final batch
-                    progress.append((final_checkpoint, False))
-                    raise e
-
-            return translated
-
+            return self._process_translation_batches(
+                text_list,
+                src_lang,
+                target_lang,
+                progress_callback=progress_callback,
+                progress=progress,
+            )
         except Exception as e:
             # Find the last successful batch from progress
             successful_batches = [idx for idx, success in progress if success]
             if successful_batches:
                 last_successful = max(successful_batches)
-                fail_point = last_successful[1]  # The end index of the last successful batch
+                fail_point = last_successful[
+                    1
+                ]  # The end index of the last successful batch
                 logger.error(
-                    f"Translation failed at position {fail_point}/{len(text_list)} "
-                    f"({(fail_point/len(text_list))*100:.1f}% complete): {e}"
+                    "Translation failed at position %d/%d (%.1f%% complete): %s",
+                    fail_point,
+                    len(text_list),
+                    (fail_point / len(text_list)) * 100,
+                    e,
                 )
-            else:
-                logger.error(f"Translation failed before any batches were completed: {e}")
+            logger.error("Translation failed before any batches were completed: %s", e)
 
-            logger.error(f"Failed to translate lines: {e}")
-            raise TranslationError(f"Failed to translate lines: {e}")
+            logger.error("Failed to translate lines: %s", e)
+            raise TranslationError(f"Failed to translate lines: {e}") from e
+
+    def _process_translation_batches(
+        self,
+        text_list: List[str],
+        src_lang: str,
+        target_lang: str,
+        *,
+        progress_callback: Optional[Callable[[int, int, str], None]],
+        progress: List[tuple[tuple[int, int], bool]],
+    ) -> str:
+        """Process translation batches to reduce nesting complexity."""
+        translated = ""
+        last_idx = 0
+        total_length = 0
+
+        for i, text_item in enumerate(text_list):
+            total_length += len(text_item)
+            if total_length > self.max_limited:
+                translated = self._process_batch(
+                    text_list,
+                    last_idx,
+                    i,
+                    src_lang=src_lang,
+                    target_lang=target_lang,
+                    translated=translated,
+                    progress=progress,
+                    progress_callback=progress_callback,
+                )
+                last_idx = i
+                total_length = 0
+
+        # Translate the last batch
+        translated = self._process_final_batch(
+            text_list,
+            last_idx,
+            src_lang=src_lang,
+            target_lang=target_lang,
+            translated=translated,
+            progress=progress,
+            progress_callback=progress_callback,
+        )
+        return translated
+
+    def _process_batch(
+        self,
+        text_list: List[str],
+        last_idx: int,
+        current_idx: int,
+        *,
+        src_lang: str,
+        target_lang: str,
+        translated: str,
+        progress: List[tuple[tuple[int, int], bool]],
+        progress_callback: Optional[Callable[[int, int, str], None]],
+    ) -> str:
+        """Process a single batch of translation."""
+        batch = "\n".join(text_list[last_idx:current_idx])
+        if not batch.strip():
+            return translated
+
+        checkpoint = (last_idx, current_idx)
+        translated = self._translate_batch_with_retry(
+            batch,
+            src_lang,
+            target_lang,
+            translated=translated,
+            checkpoint=checkpoint,
+            progress=progress,
+            current_idx=current_idx,
+            total_items=len(text_list),
+            progress_callback=progress_callback,
+        )
+
+        # Adaptive delay based on batch size
+        delay = 1 + (len(batch) / 2000)
+        logger.info(
+            "Pausing for %.2fs between translation batches to avoid rate limiting",
+            delay,
+        )
+        time.sleep(delay)
+        return translated
+
+    def _process_final_batch(
+        self,
+        text_list: List[str],
+        last_idx: int,
+        *,
+        src_lang: str,
+        target_lang: str,
+        translated: str,
+        progress: List[tuple[tuple[int, int], bool]],
+        progress_callback: Optional[Callable[[int, int, str], None]],
+    ) -> str:
+        """Process the final batch of translation."""
+        last_batch = "\n".join(text_list[last_idx:])
+        if not last_batch.strip():
+            return translated
+
+        final_checkpoint = (last_idx, len(text_list))
+        return self._translate_batch_with_retry(
+            last_batch,
+            src_lang,
+            target_lang,
+            translated=translated,
+            checkpoint=final_checkpoint,
+            progress=progress,
+            current_idx=len(text_list),
+            total_items=len(text_list),
+            progress_callback=progress_callback,
+        )
+
+    def _translate_batch_with_retry(
+        self,
+        batch: str,
+        src_lang: str,
+        target_lang: str,
+        *,
+        translated: str,
+        checkpoint: tuple[int, int],
+        progress: List[tuple[tuple[int, int], bool]],
+        current_idx: int,
+        total_items: int,
+        progress_callback: Optional[Callable[[int, int, str], None]],
+    ) -> str:
+        """Translate a batch with retry logic for rate limits."""
+        try:
+            batch_translation = self.translate(batch, src_lang, target_lang)
+            translated += batch_translation + "\n"
+            progress.append((checkpoint, True))
+
+            if progress_callback:
+                progress_callback(current_idx, total_items, translated)
+
+        except RateLimitError:
+            logger.warning(
+                "Rate limit detected during batch translation. "
+                "Backing off for 30 seconds."
+            )
+            time.sleep(30)
+
+            # Retry after backoff
+            batch_translation = self.translate(batch, src_lang, target_lang)
+            translated += batch_translation + "\n"
+            progress.append((checkpoint, True))
+
+            if progress_callback:
+                progress_callback(current_idx, total_items, translated)
+
+        except TranslationError as e:
+            progress.append((checkpoint, False))
+            raise e
+
+        return translated
 
 
 class TkGenerator:
     """Generate TK parameter for Google Translate requests."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         try:
             self.ctx = execjs.compile(
                 """
@@ -529,7 +675,11 @@ class TkGenerator:
             var Zb = "+-3^+b+-f";
             for (var e = [], f = 0, g = 0; g < a.length; g++) {
                 var m = a.charCodeAt(g);
-                128 > m ? e[f++] = m : (2048 > m ? e[f++] = m >> 6 | 192 : (55296 == (m & 64512) && g + 1 < a.length && 56320 == (a.charCodeAt(g + 1) & 64512) ? (m = 65536 + ((m & 1023) << 10) + (a.charCodeAt(++g) & 1023),
+                128 > m ? e[f++] = m : (
+                    2048 > m ? e[f++] = m >> 6 | 192 : (
+                        55296 == (m & 64512) && g + 1 < a.length && 
+                        56320 == (a.charCodeAt(g + 1) & 64512) ? (
+                            m = 65536 + ((m & 1023) << 10) + (a.charCodeAt(++g) & 1023),
                 e[f++] = m >> 18 | 240,
                 e[f++] = m >> 12 & 63 | 128) : e[f++] = m >> 12 | 224,
                 e[f++] = m >> 6 & 63 | 128),
@@ -558,19 +708,24 @@ class TkGenerator:
         """
             )
         except Exception as e:
-            logger.error(f"Failed to initialize TkGenerator: {e}")
-            raise TranslationError(f"Failed to initialize JavaScript context for translation: {e}")
+            logger.error("Failed to initialize TkGenerator: %s", e)
+            raise TranslationError(
+                f"Failed to initialize JavaScript context for translation: {e}"
+            ) from e
 
     def get_tk(self, text: str) -> str:
         """Generate the TK parameter for a given text."""
         try:
-            return self.ctx.call("TL", text)
+            result = self.ctx.call("TL", text)
+            return str(result) if result is not None else ""
         except Exception as e:
-            logger.error(f"Failed to generate TK: {e}")
-            raise TranslationError(f"Failed to generate translation key: {e}")
+            logger.error("Failed to generate TK: %s", e)
+            raise TranslationError(f"Failed to generate translation key: {e}") from e
 
 
-def get_translator(service: str = "google", api_key: Optional[str] = None) -> Translator:
+def get_translator(
+    service: str = "google", api_key: Optional[str] = None
+) -> Translator:
     """
     Factory function to get a translator instance.
 
@@ -586,5 +741,5 @@ def get_translator(service: str = "google", api_key: Optional[str] = None) -> Tr
     """
     if service.lower() == "google":
         return GoogleTranslator(api_key)
-    else:
-        raise ValueError(f"Unsupported translation service: {service}")
+
+    raise ValueError(f"Unsupported translation service: {service}")

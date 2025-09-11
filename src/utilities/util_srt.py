@@ -1,21 +1,38 @@
+"""Subtitle utilities module."""
+
 import re
+from typing import Protocol
+
+
+class SubtitleLike(Protocol):
+    """Protocol for subtitle objects with required attributes."""
+
+    content: str
+
+
+# Type alias for better clarity
+SubtitleList = list[SubtitleLike]
 
 try:
     import jieba
 except ImportError:
-    print('If your target language is Chinese, please install third party library "jieba"')
-    pass
+    print(
+        'If your target language is Chinese, please install third party library "jieba"'
+    )
 
 
 class Splitter:
-    def __init__(self):
+    """Text splitter class."""
+
+    def __init__(self) -> None:
         self.pattern = re.compile(r"(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s")
 
-    def split(self, text):
+    def split(self, text: str) -> list[str]:
+        """Split text into sentences."""
         return self.pattern.split(text)
 
 
-def triple_r(sub_list):
+def triple_r(sub_list: SubtitleList) -> tuple[str, list[int]]:
     """
     Remove the line break.
     Reconstruct plain text of the whole subtitle file.
@@ -29,13 +46,15 @@ def triple_r(sub_list):
     for sub in sub_list:
         sub.content = sub.content.replace("\n", " ") + " "  # remove line break
         current_idx += len(sub.content)
-        dialog_idx.append(current_idx)  # record the position of dialogue in the plain text
+        dialog_idx.append(
+            current_idx
+        )  # record the position of dialogue in the plain text
         plain_text = plain_text + sub.content
 
     return plain_text[:-1], dialog_idx
 
 
-def split_and_record(plain_text):
+def split_and_record(plain_text: str) -> tuple[list[str], list[int]]:
     """
     Split the plain text into sentences.
     Record the index of each sentence in the plain text.
@@ -53,7 +72,9 @@ def split_and_record(plain_text):
     return sen_list, sen_idx
 
 
-def compute_mass_list(dialog_idx, sen_idx):
+def compute_mass_list(
+    dialog_idx: list[int], sen_idx: list[int]
+) -> list[list[tuple[int, int]]]:
     """
     Most confusing step...
 
@@ -72,15 +93,20 @@ def compute_mass_list(dialog_idx, sen_idx):
     What this function want to do is try to figure out each sentence belongs to which dialogues.
 
     For example:
-        Sentence: Coding has been the bread and butter for developers since the dawn of computing.	[(5, 41), (6, 81)]
-        means the "Coding has been the bread and butter for"(length equals to 41) is the 5th dialogue of the subtitle,
-        "developers since the dawn of computing"(from position 41 to 81) is the 6th dialogue of the subtitle.
+        Sentence: Coding has been the bread and butter for developers since the dawn of
+        computing.	[(5, 41), (6, 81)]
+        means the "Coding has been the bread and butter for"(length equals to 41) is the
+        5th dialogue of the subtitle,
+        "developers since the dawn of computing"(from position 41 to 81) is the 6th
+        dialogue of the subtitle.
 
     mass_list = [[(1, a), (2, b)], [(3, c)], [(4, d), (5, e), (6, f)]]
-    means a subtitle include 3 sentence (the length of the list record_each_sentence, len(record_each_sentence))
-        In the first sentence: there are 2 dialogues, the first dialogue is first_sentence[0:a]
-                                the second dialogue is first_sentence[a:b]
-        In the second sentence: there are 1 dialogues, the third dialogue of the whole subtitle is second_sentence[0:c]
+    means a subtitle include 3 sentence (the length of the list record_each_sentence,
+    len(record_each_sentence))
+        In the first sentence: there are 2 dialogues, the first dialogue is
+        first_sentence[0:a] the second dialogue is first_sentence[a:b]
+        In the second sentence: there are 1 dialogues, the third dialogue of the whole
+        subtitle is second_sentence[0:c]
 
 
     :param dialog_idx:
@@ -90,7 +116,7 @@ def compute_mass_list(dialog_idx, sen_idx):
     i = 0
     j = 1
     mass_list = []
-    one_sentence = []
+    one_sentence: list[tuple[int, int]] = []
     while i < len(dialog_idx):
         if dialog_idx[i] > sen_idx[j]:
             mass_list.append(one_sentence)
@@ -103,17 +129,28 @@ def compute_mass_list(dialog_idx, sen_idx):
     return mass_list
 
 
-def get_the_nearest_space(sentence: str, current_idx: int):
+def get_the_nearest_space(sentence: str, current_idx: int) -> int:
+    """
+    Find the nearest space to split at in a space-delimited language.
+
+    Args:
+        sentence: Text to split
+        current_idx: Target position
+
+    Returns:
+        Index of nearest space
+    """
     left_idx = sentence[:current_idx].rfind(" ")
     right_idx = sentence[current_idx:].find(" ")
 
     if current_idx - left_idx > right_idx:
         return right_idx + current_idx + 1
-    else:
-        return left_idx + 1
+    return left_idx + 1
 
 
-def get_the_nearest_split_sen_cn(sentence: str, current_idx: int, last_idx: int, scope=6):
+def get_the_nearest_split_sen_cn(
+    sentence: str, current_idx: int, last_idx: int, scope: int = 6
+) -> int:
     """
     Split Chinese sentence
     :param sentence: Chinese sentence
@@ -123,14 +160,16 @@ def get_the_nearest_split_sen_cn(sentence: str, current_idx: int, last_idx: int,
     :return:
     """
     last_idx = last_idx if last_idx > current_idx - scope else current_idx - scope
-    next_idx = current_idx + scope if current_idx + scope < len(sentence) else len(sentence)
+    next_idx = (
+        current_idx + scope if current_idx + scope < len(sentence) else len(sentence)
+    )
 
     words = list(jieba.cut(sentence[last_idx:next_idx]))
     total_len = 0
     word_idx = 0
     target_idx = current_idx - last_idx
-    for w in words:
-        total_len += len(w)
+    for word in words:
+        total_len += len(word)
         word_idx += 1
         if total_len >= target_idx:
             break
@@ -141,10 +180,15 @@ def get_the_nearest_split_sen_cn(sentence: str, current_idx: int, last_idx: int,
     return total_len + last_idx
 
 
-def sen_list2dialog_list(sen_list, mass_list, space=False, cn=False) -> list:
+def sen_list2dialog_list(
+    sen_list: list[str],
+    mass_list: list[list[tuple[int, int]]],
+    space: bool = False,
+    is_chinese: bool = False,
+) -> list[str]:
     """
     Convert the sentence list to dialogue list
-    :param cn: is the target language is Chinese
+    :param is_chinese: is the target language is Chinese
     :param sen_list: sentence list (Translated)
     :param mass_list: mass_list compute by compute_mass_list(dialog_idx, sen_idx)
     :param space: is the vocabulary of target language split by space
@@ -152,9 +196,8 @@ def sen_list2dialog_list(sen_list, mass_list, space=False, cn=False) -> list:
     """
     dialog_num = mass_list[-1][-1][0]
     dialog_list = [""] * dialog_num
-    for k in range(len(sen_list)):
-        sentence = sen_list[k]
-        record = mass_list[k]
+    for idx, sentence in enumerate(sen_list):
+        record = mass_list[idx]
 
         total_dialog_of_sentence = len(record)
 
@@ -166,20 +209,16 @@ def sen_list2dialog_list(sen_list, mass_list, space=False, cn=False) -> list:
             translated_len = len(sentence)
 
             last_idx = 0
-            for l in range(len(record) - 1):
-                current_idx = int(translated_len * record[l][1] / origin_len)
-                if space and not cn:
+            for record_idx in range(len(record) - 1):
+                current_idx = int(translated_len * record[record_idx][1] / origin_len)
+                if space and not is_chinese:
                     current_idx = get_the_nearest_space(sentence, current_idx)
-                    dialog_list[record[l][0] - 1] += sentence[last_idx:current_idx]
-                    last_idx = current_idx
-                elif cn:
-                    current_idx = get_the_nearest_split_sen_cn(sentence, current_idx, last_idx)
-
-                    dialog_list[record[l][0] - 1] += sentence[last_idx:current_idx]
-                    last_idx = current_idx
-                else:
-                    dialog_list[record[l][0] - 1] += sentence[last_idx:current_idx]
-                    last_idx = current_idx
+                elif is_chinese:
+                    current_idx = get_the_nearest_split_sen_cn(
+                        sentence, current_idx, last_idx
+                    )
+                dialog_list[record[record_idx][0] - 1] += sentence[last_idx:current_idx]
+                last_idx = current_idx
 
             dialog_list[record[-1][0] - 1] += sentence[last_idx:]
 

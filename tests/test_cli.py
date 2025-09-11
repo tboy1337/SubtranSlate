@@ -3,25 +3,30 @@ Tests for the CLI functionality.
 """
 
 import argparse
-import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 # Add the parent directory to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.subtranslate.cli import handle_encoding_command, handle_translate_command, main, parse_args
+# Imports must happen after sys.path modification  # pylint: disable=wrong-import-position
+from src.subtranslate.cli import (
+    handle_encoding_command,
+    handle_translate_command,
+    main,
+    parse_args,
+)
 from src.subtranslate.core.subtitle import SubtitleError
-from src.subtranslate.core.translation import RateLimitError, TranslationError
+from src.subtranslate.core.translation import TranslationError
 
 
 class TestParseArgs(unittest.TestCase):
     """Tests for argument parsing."""
 
-    def test_parse_args_default_translate(self):
+    def test_parse_args_default_translate(self) -> None:
         """Test parsing arguments with default translate command."""
         args = parse_args(["input.srt", "output.srt"])
 
@@ -31,9 +36,11 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(args.src_lang, "en")
         self.assertEqual(args.target_lang, "zh-CN")
 
-    def test_parse_args_explicit_translate(self):
+    def test_parse_args_explicit_translate(self) -> None:
         """Test parsing arguments with explicit translate command."""
-        args = parse_args(["translate", "input.srt", "output.srt", "-s", "fr", "-t", "de"])
+        args = parse_args(
+            ["translate", "input.srt", "output.srt", "-s", "fr", "-t", "de"]
+        )
 
         self.assertEqual(args.command, "translate")
         self.assertEqual(args.input, "input.srt")
@@ -41,7 +48,7 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(args.src_lang, "fr")
         self.assertEqual(args.target_lang, "de")
 
-    def test_parse_args_translate_options(self):
+    def test_parse_args_translate_options(self) -> None:
         """Test parsing translate command with all options."""
         args = parse_args(
             [
@@ -82,7 +89,7 @@ class TestParseArgs(unittest.TestCase):
         self.assertTrue(args.verbose)
         self.assertTrue(args.no_resume)
 
-    def test_parse_args_encode_command(self):
+    def test_parse_args_encode_command(self) -> None:
         """Test parsing encode command."""
         args = parse_args(["encode", "input.srt", "-t", "utf-8,tis-620"])
 
@@ -90,14 +97,14 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(args.input, "input.srt")
         self.assertEqual(args.to_encoding, "utf-8,tis-620")
 
-    def test_parse_args_encode_list_encodings(self):
+    def test_parse_args_encode_list_encodings(self) -> None:
         """Test parsing encode command with --list-encodings."""
         args = parse_args(["encode", "--list-encodings"])
 
         self.assertEqual(args.command, "encode")
         self.assertTrue(args.list_encodings)
 
-    def test_parse_args_encode_options(self):
+    def test_parse_args_encode_options(self) -> None:
         """Test parsing encode command with all options."""
         args = parse_args(
             [
@@ -132,12 +139,12 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(args.pattern, "*.srt")
         self.assertTrue(args.verbose)
 
-    def test_parse_args_encode_missing_input(self):
+    def test_parse_args_encode_missing_input(self) -> None:
         """Test parsing encode command without input raises error."""
         with self.assertRaises(SystemExit):
             parse_args(["encode"])
 
-    def test_parse_args_encode_list_encodings_no_input_required(self):
+    def test_parse_args_encode_list_encodings_no_input_required(self) -> None:
         """Test that --list-encodings doesn't require input."""
         args = parse_args(["encode", "--list-encodings"])
 
@@ -150,16 +157,16 @@ class TestParseArgs(unittest.TestCase):
 class TestHandleEncodingCommand(unittest.TestCase):
     """Tests for handle_encoding_command function."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Set up test fixtures."""
         self.temp_dir = tempfile.TemporaryDirectory()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         """Clean up test fixtures."""
         self.temp_dir.cleanup()
 
     @patch("src.subtranslate.cli.COMMON_ENCODINGS", ["utf-8", "tis-620", "cp874"])
-    def test_handle_encoding_list_encodings(self):
+    def test_handle_encoding_list_encodings(self) -> None:
         """Test listing encodings."""
         args = argparse.Namespace(list_encodings=True, verbose=False)
 
@@ -176,7 +183,9 @@ class TestHandleEncodingCommand(unittest.TestCase):
     @patch("src.subtranslate.cli.convert_subtitle_encoding")
     @patch("src.subtranslate.cli.detect_encoding")
     @patch("os.path.isfile")
-    def test_handle_encoding_single_file(self, mock_isfile, mock_detect, mock_convert):
+    def test_handle_encoding_single_file(
+        self, mock_isfile: Mock, mock_detect: Mock, mock_convert: Mock
+    ) -> None:
         """Test encoding conversion for single file."""
         mock_isfile.return_value = True
         mock_detect.return_value = "utf-8"
@@ -206,8 +215,8 @@ class TestHandleEncodingCommand(unittest.TestCase):
     @patch("src.subtranslate.cli.detect_encoding")
     @patch("os.path.isfile")
     def test_handle_encoding_single_file_multiple_encodings(
-        self, mock_isfile, mock_detect, mock_convert
-    ):
+        self, mock_isfile: Mock, mock_detect: Mock, mock_convert: Mock
+    ) -> None:
         """Test encoding conversion for single file to multiple encodings."""
         mock_isfile.return_value = True
         mock_detect.return_value = "utf-8"
@@ -238,8 +247,12 @@ class TestHandleEncodingCommand(unittest.TestCase):
     @patch("src.subtranslate.cli.detect_encoding")
     @patch("os.path.isfile")
     def test_handle_encoding_recommended(
-        self, mock_isfile, mock_detect, mock_convert, mock_recommended
-    ):
+        self,
+        mock_isfile: Mock,
+        mock_detect: Mock,
+        mock_convert: Mock,
+        mock_recommended: Mock,
+    ) -> None:
         """Test encoding conversion with recommended encodings."""
         mock_isfile.return_value = True
         mock_detect.return_value = "utf-8"
@@ -324,7 +337,12 @@ class TestHandleEncodingCommand(unittest.TestCase):
     def test_handle_encoding_batch(self, mock_isdir, mock_glob, mock_convert_multiple):
         """Test batch encoding conversion."""
         mock_isdir.return_value = True
-        mock_glob.return_value = ["file1.srt", "file2.srt"]
+        # Use absolute paths within the temp directory to avoid cross-drive issues
+        import os  # pylint: disable=import-outside-toplevel
+
+        temp_file1 = os.path.join(self.temp_dir.name, "file1.srt")
+        temp_file2 = os.path.join(self.temp_dir.name, "file2.srt")
+        mock_glob.return_value = [temp_file1, temp_file2]
         mock_convert_multiple.return_value = {"utf-8": True, "tis-620": True}
 
         args = argparse.Namespace(
@@ -399,11 +417,11 @@ class TestHandleEncodingCommand(unittest.TestCase):
 class TestHandleTranslateCommand(unittest.TestCase):
     """Tests for handle_translate_command function."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Set up test fixtures."""
         self.temp_dir = tempfile.TemporaryDirectory()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         """Clean up test fixtures."""
         self.temp_dir.cleanup()
 
@@ -442,7 +460,9 @@ class TestHandleTranslateCommand(unittest.TestCase):
 
     @patch("src.subtranslate.cli.SubtitleTranslator")
     @patch("os.path.isfile")
-    def test_handle_translate_single_file_not_found(self, mock_isfile, mock_translator_class):
+    def test_handle_translate_single_file_not_found(
+        self, mock_isfile, _mock_translator_class
+    ):
         """Test translating non-existent file."""
         mock_isfile.return_value = False
 
@@ -560,14 +580,14 @@ class TestHandleTranslateCommand(unittest.TestCase):
 
         self.assertEqual(result, 1)
 
-    def test_handle_translate_space_language_detection(self):
+    def test_handle_translate_space_language_detection(self) -> None:
         """Test automatic space detection for different target languages."""
         space_languages = ["fr", "en", "de", "es", "it", "pt", "ru"]
 
         for lang in space_languages:
-            with patch("src.subtranslate.cli.SubtitleTranslator") as mock_translator_class, patch(
-                "os.path.isfile", return_value=True
-            ):
+            with patch(
+                "src.subtranslate.cli.SubtitleTranslator"
+            ) as mock_translator_class, patch("os.path.isfile", return_value=True):
 
                 mock_translator = Mock()
                 mock_translator_class.return_value = mock_translator
@@ -599,7 +619,7 @@ class TestHandleTranslateCommand(unittest.TestCase):
 class TestMain(unittest.TestCase):
     """Tests for the main function."""
 
-    def test_main_translate_command(self):
+    def test_main_translate_command(self) -> None:
         """Test main function with translate command."""
         with patch("src.subtranslate.cli.handle_translate_command") as mock_handle:
             mock_handle.return_value = 0
@@ -609,7 +629,7 @@ class TestMain(unittest.TestCase):
         self.assertEqual(result, 0)
         mock_handle.assert_called_once()
 
-    def test_main_encode_command(self):
+    def test_main_encode_command(self) -> None:
         """Test main function with encode command."""
         with patch("src.subtranslate.cli.handle_encoding_command") as mock_handle:
             mock_handle.return_value = 0
@@ -619,7 +639,7 @@ class TestMain(unittest.TestCase):
         self.assertEqual(result, 0)
         mock_handle.assert_called_once()
 
-    def test_main_default_args(self):
+    def test_main_default_args(self) -> None:
         """Test main function with default arguments (no command specified)."""
         with patch("src.subtranslate.cli.handle_translate_command") as mock_handle:
             mock_handle.return_value = 0
@@ -629,7 +649,7 @@ class TestMain(unittest.TestCase):
         self.assertEqual(result, 0)
         mock_handle.assert_called_once()
 
-    def test_main_subtitle_error(self):
+    def test_main_subtitle_error(self) -> None:
         """Test main function handling SubtitleError."""
         with patch("src.subtranslate.cli.handle_translate_command") as mock_handle:
             mock_handle.side_effect = SubtitleError("Subtitle error")
@@ -638,7 +658,7 @@ class TestMain(unittest.TestCase):
 
         self.assertEqual(result, 1)
 
-    def test_main_translation_error(self):
+    def test_main_translation_error(self) -> None:
         """Test main function handling TranslationError."""
         with patch("src.subtranslate.cli.handle_translate_command") as mock_handle:
             mock_handle.side_effect = TranslationError("Translation error")
@@ -647,7 +667,7 @@ class TestMain(unittest.TestCase):
 
         self.assertEqual(result, 1)
 
-    def test_main_keyboard_interrupt(self):
+    def test_main_keyboard_interrupt(self) -> None:
         """Test main function handling KeyboardInterrupt."""
         with patch("src.subtranslate.cli.handle_translate_command") as mock_handle:
             mock_handle.side_effect = KeyboardInterrupt()
@@ -656,7 +676,7 @@ class TestMain(unittest.TestCase):
 
         self.assertEqual(result, 130)
 
-    def test_main_unexpected_error(self):
+    def test_main_unexpected_error(self) -> None:
         """Test main function handling unexpected error."""
         with patch("src.subtranslate.cli.handle_translate_command") as mock_handle:
             mock_handle.side_effect = Exception("Unexpected error")
@@ -665,15 +685,14 @@ class TestMain(unittest.TestCase):
 
         self.assertEqual(result, 1)
 
-    def test_main_no_args(self):
+    def test_main_no_args(self) -> None:
         """Test main function with no arguments."""
-        result = main(None)
+        with patch("sys.argv", ["subtranslate"]):
+            # When no args provided, should return error code
+            result = main(None)
+            self.assertNotEqual(result, 0)  # Should return non-zero error code
 
-        # Should default to showing help and return appropriately
-        # This might vary based on argparse implementation
-        self.assertIsInstance(result, int)
-
-    def test_main_verbose_error_handling(self):
+    def test_main_verbose_error_handling(self) -> None:
         """Test main function with verbose error handling."""
         with patch("src.subtranslate.cli.parse_args") as mock_parse:
             mock_args = Mock()
@@ -681,9 +700,9 @@ class TestMain(unittest.TestCase):
             mock_args.verbose = True
             mock_parse.return_value = mock_args
 
-            with patch("src.subtranslate.cli.handle_translate_command") as mock_handle, patch(
-                "traceback.print_exc"
-            ) as mock_traceback:
+            with patch(
+                "src.subtranslate.cli.handle_translate_command"
+            ) as mock_handle, patch("traceback.print_exc") as mock_traceback:
 
                 mock_handle.side_effect = SubtitleError("Test error")
 

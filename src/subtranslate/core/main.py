@@ -8,10 +8,18 @@ import os
 import time
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
-from .subtitle import SubtitleError, SubtitleProcessor
+from .subtitle import SubtitleError, SubtitleLike, SubtitleProcessor
 from .translation import RateLimitError, TranslationError, get_translator
+
+# Type aliases
+CheckpointData = Dict[
+    str, Union[str, int, float, bool, List[Dict[str, Union[str, int, timedelta, None]]]]
+]
+SubtitleList = List[SubtitleLike]
+BatchResult = Dict[str, str]
+BatchResults = Dict[str, BatchResult]
 
 # Configure logging
 logging.basicConfig(
@@ -23,7 +31,9 @@ logger = logging.getLogger(__name__)
 class SubtitleTranslator:
     """Main class for translating subtitles."""
 
-    def __init__(self, translation_service: str = "google", api_key: Optional[str] = None):
+    def __init__(
+        self, translation_service: str = "google", api_key: Optional[str] = None
+    ):
         """
         Initialize the subtitle translator.
 
@@ -40,6 +50,7 @@ class SubtitleTranslator:
         output_file: str,
         src_lang: str,
         target_lang: str,
+        *,
         encoding: str = "UTF-8",
         mode: str = "split",
         both: bool = True,
@@ -82,15 +93,18 @@ class SubtitleTranslator:
                     checkpoint_data = json.load(f)
 
                 logger.info(
-                    "Found checkpoint file with %d%% completion", checkpoint_data.get('progress', 0)
+                    "Found checkpoint file with %d%% completion",
+                    checkpoint_data.get("progress", 0),
                 )
 
                 # If the checkpoint is complete, we can use the output file directly
                 if checkpoint_data.get("status") == "complete":
-                    logger.info("Translation was already completed according to checkpoint")
+                    logger.info(
+                        "Translation was already completed according to checkpoint"
+                    )
                     return
 
-            except Exception as e:
+            except (OSError, IOError, json.JSONDecodeError) as e:
                 logger.warning("Failed to load checkpoint file: %s", e)
                 checkpoint_data = None
 
@@ -101,9 +115,13 @@ class SubtitleTranslator:
                 subtitles = self.subtitle_processor.from_serialized(
                     checkpoint_data["parsed_subtitles"]
                 )
-                logger.info("Loaded %d subtitle entries from checkpoint", len(subtitles))
-            except Exception as e:
-                logger.warning("Failed to load subtitles from checkpoint: %s, will reparse file", e)
+                logger.info(
+                    "Loaded %d subtitle entries from checkpoint", len(subtitles)
+                )
+            except (ValueError, KeyError, TypeError) as e:
+                logger.warning(
+                    "Failed to load subtitles from checkpoint: %s, will reparse file", e
+                )
                 subtitles = None
 
         if subtitles is None:
@@ -127,7 +145,9 @@ class SubtitleTranslator:
                         "mode": mode,
                         "both": both,
                         "progress": 0,
-                        "parsed_subtitles": self.subtitle_processor.to_serialized(subtitles),
+                        "parsed_subtitles": self.subtitle_processor.to_serialized(
+                            subtitles
+                        ),
                     },
                 )
 
@@ -139,10 +159,13 @@ class SubtitleTranslator:
             try:
                 translated_subtitles = checkpoint_data["partial_translation"]
                 logger.info(
-                    "Resuming translation from checkpoint at %d%% completion", checkpoint_data.get('progress', 0)
+                    "Resuming translation from checkpoint at %d%% completion",
+                    checkpoint_data.get("progress", 0),
                 )
-            except Exception as e:
-                logger.warning("Failed to use partial translation from checkpoint: %s", e)
+            except (ValueError, KeyError, TypeError) as e:
+                logger.warning(
+                    "Failed to use partial translation from checkpoint: %s", e
+                )
                 translated_subtitles = None
 
         # Translate from scratch if needed
@@ -153,7 +176,7 @@ class SubtitleTranslator:
                         subtitles,
                         src_lang,
                         target_lang,
-                        both,
+                        both=both,
                         checkpoint_file=checkpoint_file if resume else None,
                     )
                 else:
@@ -161,8 +184,8 @@ class SubtitleTranslator:
                         subtitles,
                         src_lang,
                         target_lang,
-                        both,
-                        space,
+                        both=both,
+                        space=space,
                         checkpoint_file=checkpoint_file if resume else None,
                     )
             except (SubtitleError, TranslationError, RateLimitError) as e:
@@ -171,7 +194,9 @@ class SubtitleTranslator:
 
         # Save translated subtitles
         try:
-            self.subtitle_processor.save_file(translated_subtitles, output_file, encoding="UTF-8")
+            self.subtitle_processor.save_file(
+                translated_subtitles, output_file, encoding="UTF-8"
+            )
         except SubtitleError as e:
             logger.error("Failed to save subtitle file: %s", e)
             raise
@@ -191,30 +216,36 @@ class SubtitleTranslator:
         elapsed_time = time.time() - start_time
         logger.info("Translation completed in %.2f seconds", elapsed_time)
 
-    def _save_checkpoint(self, checkpoint_file: str, data: Dict[str, Any]) -> None:
+    def _save_checkpoint(self, checkpoint_file: str, data: CheckpointData) -> None:
         """Save translation progress to checkpoint file."""
         try:
             # Create a custom JSON encoder to handle timedelta objects
             class CustomJSONEncoder(json.JSONEncoder):
-                def default(self, obj):
-                    if isinstance(obj, timedelta):
-                        return str(obj)
-                    return super().default(obj)
+                """Custom JSON encoder for handling timedelta objects."""
+
+                def default(self, o: object) -> str:
+                    if isinstance(o, timedelta):
+                        return str(o)
+                    # super().default() raises TypeError if object is not serializable
+                    # but mypy thinks it returns Any, so we cast the result
+                    result = super().default(o)
+                    return str(result)
 
             with open(checkpoint_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2, cls=CustomJSONEncoder)
             logger.debug("Saved checkpoint to %s", checkpoint_file)
-        except Exception as e:
+        except (OSError, IOError, TypeError) as e:
             logger.warning("Failed to save checkpoint: %s", e)
 
     def _translate_naive(
         self,
-        subtitles: List[Any],
+        subtitles: SubtitleList,
         src_lang: str,
         target_lang: str,
+        *,
         both: bool = True,
         checkpoint_file: Optional[str] = None,
-    ) -> List[Any]:
+    ) -> SubtitleList:
         """
         Translate subtitles in 'naive' mode (straightforward translation).
 
@@ -252,7 +283,9 @@ class SubtitleTranslator:
                     if retry_count < 2:  # Only retry twice
                         backoff_time = 60 * (retry_count + 1)  # 60s, 120s
                         logger.warning(
-                            "Rate limit detected. Backing off for %ds before retry %d/3", backoff_time, retry_count+1
+                            "Rate limit detected. Backing off for %ds before retry %d/3",
+                            backoff_time,
+                            retry_count + 1,
                         )
                         time.sleep(backoff_time)
                     else:
@@ -267,11 +300,15 @@ class SubtitleTranslator:
             # Handle potential mismatch in lists length
             if len(translated_list) != len(subtitles):
                 logger.warning(
-                    "Subtitle count mismatch: %d vs %d", len(subtitles), len(translated_list)
+                    "Subtitle count mismatch: %d vs %d",
+                    len(subtitles),
+                    len(translated_list),
                 )
                 # Try to fix by padding or truncating
                 if len(translated_list) < len(subtitles):
-                    translated_list.extend([""] * (len(subtitles) - len(translated_list)))
+                    translated_list.extend(
+                        [""] * (len(subtitles) - len(translated_list))
+                    )
                 else:
                     translated_list = translated_list[: len(subtitles)]
 
@@ -284,7 +321,11 @@ class SubtitleTranslator:
             if checkpoint_file:
                 self._save_checkpoint(
                     checkpoint_file,
-                    {"status": "translation_complete", "progress": 100, "mode": "naive"},
+                    {
+                        "status": "translation_complete",
+                        "progress": 100,
+                        "mode": "naive",
+                    },
                 )
 
             return result
@@ -298,6 +339,7 @@ class SubtitleTranslator:
         text_list: List[str],
         src_lang: str,
         target_lang: str,
+        *,
         checkpoint_file: Optional[str] = None,
         mode: str = "split",
     ) -> str:
@@ -331,7 +373,9 @@ class SubtitleTranslator:
             # Report progress and update checkpoint periodically
             now = time.time()
             if now - last_progress_report >= progress_interval:
-                logger.info("Translation progress: %.1f%% (%d/%d)", progress, current, total)
+                logger.info(
+                    "Translation progress: %.1f%% (%d/%d)", progress, current, total
+                )
                 last_progress_report = now
 
                 # Update checkpoint with partial progress
@@ -359,13 +403,14 @@ class SubtitleTranslator:
 
     def _translate_split(
         self,
-        subtitles: List[Any],
+        subtitles: SubtitleList,
         src_lang: str,
         target_lang: str,
+        *,
         both: bool = True,
         space: bool = False,
         checkpoint_file: Optional[str] = None,
-    ) -> List[Any]:
+    ) -> SubtitleList:
         """
         Translate subtitles in 'split' mode (more advanced, context-aware translation).
 
@@ -407,7 +452,9 @@ class SubtitleTranslator:
                     if retry_count < 2:  # Only retry twice
                         backoff_time = 60 * (retry_count + 1)  # 60s, 120s
                         logger.warning(
-                            "Rate limit detected. Backing off for %ds before retry %d/3", backoff_time, retry_count+1
+                            "Rate limit detected. Backing off for %ds before retry %d/3",
+                            backoff_time,
+                            retry_count + 1,
                         )
                         time.sleep(backoff_time)
                     else:
@@ -422,11 +469,15 @@ class SubtitleTranslator:
             # Handle potential mismatch in lengths
             if len(translated_sen_list) != len(sen_list):
                 logger.warning(
-                    "Sentence count mismatch after translation: %d vs %d", len(sen_list), len(translated_sen_list)
+                    "Sentence count mismatch after translation: %d vs %d",
+                    len(sen_list),
+                    len(translated_sen_list),
                 )
                 # Try to fix by padding or truncating
                 if len(translated_sen_list) < len(sen_list):
-                    translated_sen_list.extend([""] * (len(sen_list) - len(translated_sen_list)))
+                    translated_sen_list.extend(
+                        [""] * (len(sen_list) - len(translated_sen_list))
+                    )
                 else:
                     translated_sen_list = translated_sen_list[: len(sen_list)]
 
@@ -434,9 +485,9 @@ class SubtitleTranslator:
             mass_list = self.subtitle_processor.compute_mass_list(dialog_idx, sen_idx)
 
             # Special handling for Chinese
-            cn = target_lang == "zh-CN" or target_lang == "zh-TW"
+            is_chinese = target_lang in ("zh-CN", "zh-TW")
             dialog_list = self.subtitle_processor.sen_list2dialog_list(
-                translated_sen_list, mass_list, space, cn
+                translated_sen_list, mass_list, space, is_chinese=is_chinese
             )
 
             # Apply translations to subtitle objects
@@ -448,7 +499,11 @@ class SubtitleTranslator:
             if checkpoint_file:
                 self._save_checkpoint(
                     checkpoint_file,
-                    {"status": "translation_complete", "progress": 100, "mode": "split"},
+                    {
+                        "status": "translation_complete",
+                        "progress": 100,
+                        "mode": "split",
+                    },
                 )
 
             return result
@@ -463,13 +518,14 @@ class SubtitleTranslator:
         output_dir: str,
         src_lang: str,
         target_lang: str,
+        *,
         file_pattern: str = "*.srt",
         encoding: str = "UTF-8",
         mode: str = "split",
         both: bool = True,
         space: bool = False,
         resume: bool = True,
-    ) -> Dict[str, Dict[str, Any]]:
+    ) -> BatchResults:
         """
         Translate all subtitle files in a directory.
 
@@ -499,7 +555,9 @@ class SubtitleTranslator:
         logger.info("Found %d subtitle files to translate", len(input_files))
 
         # Check for batch state file
-        batch_state_file = os.path.join(output_dir, f"batch_state_{src_lang}_{target_lang}.json")
+        batch_state_file = os.path.join(
+            output_dir, f"batch_state_{src_lang}_{target_lang}.json"
+        )
         batch_state = {}
 
         if resume and os.path.exists(batch_state_file):
@@ -507,7 +565,7 @@ class SubtitleTranslator:
                 with open(batch_state_file, "r", encoding="utf-8") as f:
                     batch_state = json.load(f)
                 logger.info("Loaded batch state with %d files", len(batch_state))
-            except Exception as e:
+            except (OSError, IOError, json.JSONDecodeError) as e:
                 logger.warning("Failed to load batch state: %s", e)
                 batch_state = {}
 
@@ -532,7 +590,10 @@ class SubtitleTranslator:
                 and input_path in batch_state
                 and batch_state[input_path].get("status") == "success"
             ):
-                logger.info("Skipping %s (already completed according to batch state)", input_path)
+                logger.info(
+                    "Skipping %s (already completed according to batch state)",
+                    input_path,
+                )
                 results[input_path] = batch_state[input_path]
                 continue
 
@@ -542,11 +603,11 @@ class SubtitleTranslator:
                     output_path,
                     src_lang,
                     target_lang,
-                    encoding,
-                    mode,
-                    both,
-                    space,
-                    resume,
+                    encoding=encoding,
+                    mode=mode,
+                    both=both,
+                    space=space,
+                    resume=resume,
                 )
                 results[input_path] = {"status": "success", "output": output_path}
                 logger.info("Successfully translated %s to %s", input_path, output_path)
@@ -558,7 +619,8 @@ class SubtitleTranslator:
                         json.dump(batch_state, f, ensure_ascii=False, indent=2)
 
             except RateLimitError as e:
-                # Special handling for rate limiting - record the error but continue with next file after a pause
+                # Special handling for rate limiting - record the error but continue with
+                # next file after a pause
                 results[input_path] = {
                     "status": "rate_limited",
                     "message": str(e),
@@ -574,7 +636,7 @@ class SubtitleTranslator:
                     with open(batch_state_file, "w", encoding="utf-8") as f:
                         json.dump(batch_state, f, ensure_ascii=False, indent=2)
 
-            except Exception as e:
+            except (SubtitleError, TranslationError, OSError, IOError) as e:
                 results[input_path] = {"status": "error", "message": str(e)}
                 logger.error("Failed to translate %s: %s", input_path, e)
 
@@ -585,13 +647,17 @@ class SubtitleTranslator:
                         json.dump(batch_state, f, ensure_ascii=False, indent=2)
 
         # Log summary
-        success_count = sum(1 for result in results.values() if result["status"] == "success")
+        success_count = sum(
+            1 for result in results.values() if result["status"] == "success"
+        )
         rate_limited_count = sum(
             1 for result in results.values() if result["status"] == "rate_limited"
         )
         logger.info(
             "Translation complete: %d/%d files successful, %d rate limited",
-            success_count, len(input_files), rate_limited_count
+            success_count,
+            len(input_files),
+            rate_limited_count,
         )
 
         return results
@@ -602,6 +668,7 @@ def translate_and_compose(
     output_file: str,
     src_lang: str,
     target_lang: str,
+    *,
     encoding: str = "UTF-8",
     mode: str = "split",
     both: bool = True,
@@ -626,5 +693,13 @@ def translate_and_compose(
     """
     translator = SubtitleTranslator(api_key=api_key)
     translator.translate_file(
-        input_file, output_file, src_lang, target_lang, encoding, mode, both, space, resume
+        input_file,
+        output_file,
+        src_lang,
+        target_lang,
+        encoding=encoding,
+        mode=mode,
+        both=both,
+        space=space,
+        resume=resume,
     )

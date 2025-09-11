@@ -6,7 +6,6 @@ Tests for the encoding converter utility.
 import os
 import tempfile
 import unittest
-from pathlib import Path
 
 from src.subtranslate.utilities.encoding_converter import (
     convert_subtitle_encoding,
@@ -19,7 +18,7 @@ from src.subtranslate.utilities.encoding_converter import (
 class TestEncodingConverter(unittest.TestCase):
     """Test the encoding converter functionality."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Create a temporary file with sample content for testing."""
         self.temp_dir = tempfile.TemporaryDirectory()
         self.temp_file = os.path.join(self.temp_dir.name, "sample.srt")
@@ -38,21 +37,24 @@ More text with special characters:
         with open(self.temp_file, "w", encoding="utf-8") as f:
             f.write(sample_content)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         """Clean up temporary files."""
         self.temp_dir.cleanup()
 
-    def test_detect_encoding(self):
+    def test_detect_encoding(self) -> None:
         """Test that encoding detection works."""
         detected = detect_encoding(self.temp_file)
         self.assertIsNotNone(detected)
         # Should detect UTF-8 or UTF-8-sig
+        assert detected is not None
         self.assertTrue(detected.lower() in ["utf-8", "utf-8-sig"])
 
-    def test_convert_encoding(self):
+    def test_convert_encoding(self) -> None:
         """Test converting a file to a different encoding."""
         output_file = os.path.join(self.temp_dir.name, "converted.srt")
-        result = convert_subtitle_encoding(self.temp_file, output_file, "iso8859-1", "utf-8")
+        result = convert_subtitle_encoding(
+            self.temp_file, output_file, "iso8859-1", "utf-8"
+        )
         self.assertTrue(result)
         self.assertTrue(os.path.exists(output_file))
 
@@ -63,10 +65,10 @@ More text with special characters:
                 # Non-Latin characters might be replaced with ? or other characters
                 # but the file should be readable in the target encoding
                 self.assertTrue(len(content) > 0)
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.fail(f"Failed to read converted file: {e}")
 
-    def test_convert_multiple_encodings(self):
+    def test_convert_multiple_encodings(self) -> None:
         """Test converting a file to multiple encodings."""
         result = convert_to_multiple_encodings(
             self.temp_file, self.temp_dir.name, ["utf-8-sig", "cp1252"]
@@ -80,7 +82,7 @@ More text with special characters:
         utf8_sig_file = os.path.join(self.temp_dir.name, "sample-utf-8-sig.srt")
         self.assertTrue(os.path.exists(utf8_sig_file))
 
-    def test_get_recommended_encodings(self):
+    def test_get_recommended_encodings(self) -> None:
         """Test getting recommended encodings for different languages."""
         # Check Thai encodings
         thai_encodings = get_recommended_encodings("th")

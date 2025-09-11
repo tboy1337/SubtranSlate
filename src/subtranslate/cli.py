@@ -12,10 +12,10 @@ import traceback
 from pathlib import Path
 from typing import List, Optional
 
-from src.subtranslate.core.main import SubtitleTranslator
-from src.subtranslate.core.subtitle import SubtitleError
-from src.subtranslate.core.translation import TranslationError
-from src.subtranslate.utilities.encoding_converter import (
+from .core.main import SubtitleTranslator
+from .core.subtitle import SubtitleError
+from .core.translation import TranslationError
+from .utilities.encoding_converter import (
     COMMON_ENCODINGS,
     convert_subtitle_encoding,
     convert_to_multiple_encodings,
@@ -47,7 +47,9 @@ def parse_args(args: List[str]) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
     # Translate command
-    translate_parser = subparsers.add_parser("translate", help="Translate subtitle files")
+    translate_parser = subparsers.add_parser(
+        "translate", help="Translate subtitle files"
+    )
 
     # Input/Output options
     translate_parser.add_argument(
@@ -62,7 +64,10 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         "--src-lang", "-s", default="en", help="Source language code (default: en)"
     )
     translate_parser.add_argument(
-        "--target-lang", "-t", default="zh-CN", help="Target language code (default: zh-CN)"
+        "--target-lang",
+        "-t",
+        default="zh-CN",
+        help="Target language code (default: zh-CN)",
     )
 
     # Translation options
@@ -80,7 +85,10 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Include both original and translated text (default: True)",
     )
     translate_parser.add_argument(
-        "--only-translation", dest="both", action="store_false", help="Include only translated text"
+        "--only-translation",
+        dest="both",
+        action="store_false",
+        help="Include only translated text",
     )
     translate_parser.add_argument(
         "--space",
@@ -100,13 +108,19 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Process input as directory containing multiple subtitle files",
     )
     translate_parser.add_argument(
-        "--pattern", default="*.srt", help="File pattern for batch processing (default: *.srt)"
+        "--pattern",
+        default="*.srt",
+        help="File pattern for batch processing (default: *.srt)",
     )
 
     # API options
-    translate_parser.add_argument("--api-key", help="API key for translation service (optional)")
     translate_parser.add_argument(
-        "--service", default="google", help="Translation service to use (default: google)"
+        "--api-key", help="API key for translation service (optional)"
+    )
+    translate_parser.add_argument(
+        "--service",
+        default="google",
+        help="Translation service to use (default: google)",
     )
 
     # Misc options
@@ -123,17 +137,23 @@ def parse_args(args: List[str]) -> argparse.Namespace:
     )
 
     # Encoding conversion command
-    encode_parser = subparsers.add_parser("encode", help="Convert subtitle file encodings")
+    encode_parser = subparsers.add_parser(
+        "encode", help="Convert subtitle file encodings"
+    )
 
     # Create a mutually exclusive group for non-file operations
     encode_non_file_group = encode_parser.add_argument_group("Non-file operations")
     encode_non_file_group.add_argument(
-        "--list-encodings", action="store_true", help="List all supported encodings and exit"
+        "--list-encodings",
+        action="store_true",
+        help="List all supported encodings and exit",
     )
 
     # Input/Output options
     encode_parser.add_argument(
-        "input", nargs="?", help="Input subtitle file or directory containing subtitle files"
+        "input",
+        nargs="?",
+        help="Input subtitle file or directory containing subtitle files",
     )
     encode_parser.add_argument(
         "--output-dir",
@@ -153,7 +173,10 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Target encoding to convert to (can specify multiple with comma separation)",
     )
     encode_parser.add_argument(
-        "--all", "-a", action="store_true", help="Convert to all common subtitle encodings"
+        "--all",
+        "-a",
+        action="store_true",
+        help="Convert to all common subtitle encodings",
     )
     encode_parser.add_argument(
         "--recommended",
@@ -175,7 +198,9 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         help="Process input as directory containing multiple subtitle files",
     )
     encode_parser.add_argument(
-        "--pattern", default="*.srt", help="File pattern for batch processing (default: *.srt)"
+        "--pattern",
+        default="*.srt",
+        help="File pattern for batch processing (default: *.srt)",
     )
 
     # Misc options
@@ -213,7 +238,7 @@ def handle_encoding_command(args: argparse.Namespace) -> int:
         Exit code (0 for success, non-zero for error)
     """
     # Configure logging based on verbosity
-    if args.verbose:
+    if getattr(args, "verbose", False):
         logging.getLogger().setLevel(logging.DEBUG)
 
     # List encodings if requested
@@ -224,6 +249,14 @@ def handle_encoding_command(args: argparse.Namespace) -> int:
         return 0
 
     # Determine target encodings
+    target_encodings = _get_target_encodings(args)
+
+    # Process input based on type (batch or single file)
+    return _process_encoding_input(args, target_encodings)
+
+
+def _get_target_encodings(args: argparse.Namespace) -> List[str]:
+    """Get target encodings based on command line arguments."""
     target_encodings = []
 
     if args.to_encoding:
@@ -232,7 +265,9 @@ def handle_encoding_command(args: argparse.Namespace) -> int:
     if args.recommended:
         target_encodings = get_recommended_encodings(args.language)
         logger.info(
-            "Using recommended encodings for %s: %s", args.language, ", ".join(target_encodings)
+            "Using recommended encodings for %s: %s",
+            args.language,
+            ", ".join(target_encodings),
         )
 
     if args.all:
@@ -242,71 +277,96 @@ def handle_encoding_command(args: argparse.Namespace) -> int:
     if not target_encodings:
         # Default to some common encodings
         target_encodings = ["utf-8", "utf-8-sig", "tis-620", "cp874"]
-        logger.info("No target encoding specified, using defaults: %s", ", ".join(target_encodings))
-
-    # Process input path
-    if args.batch or os.path.isdir(args.input):
-        if not os.path.isdir(args.input):
-            logger.error("Input path is not a directory: %s", args.input)
-            return 1
-
-        # Batch processing
-
-        input_dir = args.input
-        output_dir = args.output_dir or input_dir
-
-        # Create output directory if it doesn't exist
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-
-        # Find all subtitle files
-        pattern = os.path.join(input_dir, args.pattern)
-        subtitle_files = glob.glob(pattern)
-
-        if not subtitle_files:
-            logger.error("No files matching pattern '%s' found in %s", args.pattern, input_dir)
-            return 1
-
-        logger.info("Found %d subtitle files to process", len(subtitle_files))
-
-        # Process each file
-        results = {}
-        for file_path in subtitle_files:
-            rel_path = os.path.relpath(file_path, input_dir)
-            file_output_dir = os.path.join(output_dir, os.path.dirname(rel_path))
-
-            # Create output subdirectory if needed
-            if not os.path.exists(file_output_dir):
-                os.makedirs(file_output_dir)
-
-            # Convert the file
-            file_results = convert_to_multiple_encodings(
-                file_path, file_output_dir, target_encodings
-            )
-            results[rel_path] = file_results
-
-        # Print summary
-        print("\nConversion summary:")
-        for file_path, encodings in results.items():
-            print(f"\n{file_path}:")
-            for encoding, success in encodings.items():
-                status = "Success" if success else "Failed"
-                print(f"  {encoding}: {status}")
-
-        # Count successes
-        total_conversions = sum(len(encodings) for encodings in results.values())
-        successful_conversions = sum(
-            sum(1 for success in encodings.values() if success) for encodings in results.values()
+        logger.info(
+            "No target encoding specified, using defaults: %s",
+            ", ".join(target_encodings),
         )
 
-        if successful_conversions == 0:
-            logger.error("No files were successfully converted.")
-            return 1
+    return target_encodings
 
-        logger.info("Converted %d/%d files successfully", successful_conversions, total_conversions)
-        return 0
 
-    # Single file processing
+def _process_encoding_input(
+    args: argparse.Namespace, target_encodings: List[str]
+) -> int:
+    """Process encoding conversion for input path."""
+    if args.batch or os.path.isdir(args.input):
+        return _process_batch_encoding(args, target_encodings)
+
+    return _process_single_file_encoding(args, target_encodings)
+
+
+def _process_batch_encoding(
+    args: argparse.Namespace, target_encodings: List[str]
+) -> int:
+    """Process batch encoding conversion."""
+    if not os.path.isdir(args.input):
+        logger.error("Input path is not a directory: %s", args.input)
+        return 1
+
+    input_dir = args.input
+    output_dir = args.output_dir or input_dir
+
+    # Create output directory if it doesn't exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    # Find all subtitle files
+    pattern = os.path.join(input_dir, args.pattern)
+    subtitle_files = glob.glob(pattern)
+
+    if not subtitle_files:
+        logger.error(
+            "No files matching pattern '%s' found in %s", args.pattern, input_dir
+        )
+        return 1
+
+    logger.info("Found %d subtitle files to process", len(subtitle_files))
+
+    # Process each file
+    results = {}
+    for file_path in subtitle_files:
+        rel_path = os.path.relpath(file_path, input_dir)
+        file_output_dir = os.path.join(output_dir, os.path.dirname(rel_path))
+
+        # Create output subdirectory if needed
+        if not os.path.exists(file_output_dir):
+            os.makedirs(file_output_dir)
+
+        # Convert the file
+        file_results = convert_to_multiple_encodings(
+            file_path, file_output_dir, target_encodings=target_encodings
+        )
+        results[rel_path] = file_results
+
+    # Print summary
+    print("\nConversion summary:")
+    for file_path, encodings in results.items():
+        print(f"\n{file_path}:")
+        for encoding, success in encodings.items():
+            status = "Success" if success else "Failed"
+            print(f"  {encoding}: {status}")
+
+    # Count successes
+    total_conversions = sum(len(encodings) for encodings in results.values())
+    successful_conversions = sum(
+        sum(1 for success in encodings.values() if success)
+        for encodings in results.values()
+    )
+
+    if successful_conversions == 0:
+        logger.error("No files were successfully converted.")
+        return 1
+
+    logger.info(
+        "Converted %d/%d files successfully", successful_conversions, total_conversions
+    )
+    return 0
+
+
+def _process_single_file_encoding(
+    args: argparse.Namespace, target_encodings: List[str]
+) -> int:
+    """Process single file encoding conversion."""
     if not os.path.isfile(args.input):
         logger.error("Input file does not exist: %s", args.input)
         return 1
@@ -317,47 +377,49 @@ def handle_encoding_command(args: argparse.Namespace) -> int:
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-        # Check source encoding
-        source_encoding = args.from_encoding
-        if not source_encoding:
-            detected = detect_encoding(args.input)
-            if detected:
-                source_encoding = detected
-                logger.info("Detected source encoding: %s", source_encoding)
-            else:
-                logger.error("Could not detect encoding of %s", args.input)
-                return 1
-
-        # Convert to each target encoding
-        results = {}
-        for encoding in target_encodings:
-            # Create output path
-            input_path = Path(args.input)
-            stem = input_path.stem
-            # Remove any existing encoding suffix
-            for enc in COMMON_ENCODINGS:
-                suffix = f"-{enc}"
-                if stem.lower().endswith(suffix.lower()):
-                    stem = stem[: -len(suffix)]
-
-            output_file = os.path.join(output_dir, f"{stem}-{encoding}{input_path.suffix}")
-
-            # Convert the file
-            success = convert_subtitle_encoding(args.input, output_file, encoding, source_encoding)
-            results[encoding] = success
-
-        # Print summary
-        print("\nConversion results:")
-        for encoding, success in results.items():
-            status = "Success" if success else "Failed"
-            print(f"  {encoding}: {status}")
-
-        # Check if any conversions were successful
-        if not any(results.values()):
-            logger.error("All conversions failed.")
+    # Check source encoding
+    source_encoding = args.from_encoding
+    if not source_encoding:
+        detected = detect_encoding(args.input)
+        if detected:
+            source_encoding = detected
+            logger.info("Detected source encoding: %s", source_encoding)
+        else:
+            logger.error("Could not detect encoding of %s", args.input)
             return 1
 
-        return 0
+    # Convert to each target encoding
+    results = {}
+    for encoding in target_encodings:
+        # Create output path
+        input_path = Path(args.input)
+        stem = input_path.stem
+        # Remove any existing encoding suffix
+        for enc in COMMON_ENCODINGS:
+            suffix = f"-{enc}"
+            if stem.lower().endswith(suffix.lower()):
+                stem = stem[: -len(suffix)]
+
+        output_file = os.path.join(output_dir, f"{stem}-{encoding}{input_path.suffix}")
+
+        # Convert the file
+        success = convert_subtitle_encoding(
+            args.input, output_file, encoding, source_encoding
+        )
+        results[encoding] = success
+
+    # Print summary
+    print("\nConversion results:")
+    for encoding, success in results.items():
+        status = "Success" if success else "Failed"
+        print(f"  {encoding}: {status}")
+
+    # Check if any conversions were successful
+    if not any(results.values()):
+        logger.error("All conversions failed.")
+        return 1
+
+    return 0
 
 
 def handle_translate_command(args: argparse.Namespace) -> int:
@@ -371,11 +433,13 @@ def handle_translate_command(args: argparse.Namespace) -> int:
         Exit code (0 for success, non-zero for error)
     """
     # Configure logging based on verbosity
-    if args.verbose:
+    if getattr(args, "verbose", False):
         logging.getLogger().setLevel(logging.DEBUG)
 
     # Create translator
-    translator = SubtitleTranslator(translation_service=args.service, api_key=args.api_key)
+    translator = SubtitleTranslator(
+        translation_service=args.service, api_key=args.api_key
+    )
 
     # Check if space should be used based on target language
     space = args.space
@@ -404,7 +468,9 @@ def handle_translate_command(args: argparse.Namespace) -> int:
         )
 
         # Check results
-        success_count = sum(1 for result in results.values() if result["status"] == "success")
+        success_count = sum(
+            1 for result in results.values() if result["status"] == "success"
+        )
         rate_limited_count = sum(
             1 for result in results.values() if result["status"] == "rate_limited"
         )
@@ -420,26 +486,37 @@ def handle_translate_command(args: argparse.Namespace) -> int:
             logger.error("No files were successfully translated.")
             return 1
 
-        # Single file processing
-        if not os.path.isfile(args.input):
-            logger.error("Input file does not exist: %s", args.input)
-            return 1
+        return 0
 
-        translator.translate_file(
-            input_file=args.input,
-            output_file=args.output,
-            src_lang=args.src_lang,
-            target_lang=args.target_lang,
-            encoding=args.encoding,
-            mode=args.mode,
-            both=args.both,
-            space=space,
-            resume=not args.no_resume,
-        )
+    # Single file processing
+    if not os.path.isfile(args.input):
+        logger.error("Input file does not exist: %s", args.input)
+        return 1
 
-        logger.info("Translation complete: %s", args.output)
+    translator.translate_file(
+        input_file=args.input,
+        output_file=args.output,
+        src_lang=args.src_lang,
+        target_lang=args.target_lang,
+        encoding=args.encoding,
+        mode=args.mode,
+        both=args.both,
+        space=space,
+        resume=not args.no_resume,
+    )
 
+    logger.info("Translation complete: %s", args.output)
     return 0
+
+
+def _handle_error(
+    error: Exception, message: str, error_code: int = 1, verbose: bool = False
+) -> int:
+    """Handle errors with appropriate logging and tracing."""
+    logger.error("%s: %s", message, error)
+    if verbose:
+        traceback.print_exc()
+    return error_code
 
 
 def main(args: Optional[List[str]] = None) -> int:
@@ -455,32 +532,57 @@ def main(args: Optional[List[str]] = None) -> int:
     if args is None:
         args = sys.argv[1:]
 
+    parsed_args = None
+    exit_code = 0
     try:
         parsed_args = parse_args(args)
 
         # Dispatch to appropriate handler based on command
         if parsed_args.command == "encode":
-            return handle_encoding_command(parsed_args)
-        # Default to 'translate'
-        return handle_translate_command(parsed_args)
+            exit_code = handle_encoding_command(parsed_args)
+        elif parsed_args.command == "translate":
+            exit_code = handle_translate_command(parsed_args)
+        else:
+            # No command specified - show help and return error
+            logger.error("No command specified. Use --help for usage information.")
+            exit_code = 2
 
-    except SubtitleError as e:
-        logger.error("Subtitle processing error: %s", e)
-        if hasattr(parsed_args, "verbose") and parsed_args.verbose:
-            traceback.print_exc()
-        return 1
-    except TranslationError as e:
-        logger.error("Translation error: %s", e)
-        if hasattr(parsed_args, "verbose") and parsed_args.verbose:
-            traceback.print_exc()
-        return 1
     except KeyboardInterrupt:
         logger.info("Operation cancelled by user.")
-        return 130
-    except Exception as e:
-        logger.error("Unexpected error: %s", e)
-        traceback.print_exc()
-        return 1
+        exit_code = 130
+    except (
+        SubtitleError,
+        TranslationError,
+        OSError,
+        IOError,
+        ValueError,
+        RuntimeError,
+    ) as e:
+        verbose = (
+            parsed_args is not None
+            and hasattr(parsed_args, "verbose")
+            and parsed_args.verbose
+        )
+        # Determine error message based on exception type
+        if isinstance(e, SubtitleError):
+            message = "Subtitle processing error"
+        elif isinstance(e, TranslationError):
+            message = "Translation error"
+        elif isinstance(e, (OSError, IOError)):
+            message = "File system error"
+        else:
+            message = "Unexpected error"
+        exit_code = _handle_error(e, message, 1, verbose)
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        # Catch-all for any other unexpected errors
+        verbose = (
+            parsed_args is not None
+            and hasattr(parsed_args, "verbose")
+            and parsed_args.verbose
+        )
+        exit_code = _handle_error(e, "Unexpected error", 1, verbose)
+
+    return exit_code
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ commonly used for subtitles in various languages and regions.
 import logging
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional
 
 # Configure logging
 logging.basicConfig(
@@ -58,7 +58,9 @@ COMMON_ENCODINGS = [
 ]
 
 
-def detect_encoding(file_path: str, encodings_to_try: List[str] = None) -> Optional[str]:
+def detect_encoding(
+    file_path: str, encodings_to_try: Optional[List[str]] = None
+) -> Optional[str]:
     """
     Attempt to detect the encoding of a subtitle file by trying multiple encodings.
 
@@ -73,29 +75,33 @@ def detect_encoding(file_path: str, encodings_to_try: List[str] = None) -> Optio
         encodings_to_try = COMMON_ENCODINGS
 
     if not os.path.exists(file_path):
-        logger.error(f"File not found: {file_path}")
+        logger.error("File not found: %s", file_path)
         return None
 
-    for encoding in encodings_to_try:
+    for encoding_name in encodings_to_try:
         try:
-            with open(file_path, "r", encoding=encoding) as f:
+            with open(file_path, "r", encoding=encoding_name) as f:
                 content = f.read()
-                # If we can read at least 100 characters without error, it's probably the right encoding
+                # If we can read at least 100 characters without error,
+                # it's probably the right encoding
                 if len(content) > 100:
-                    logger.debug(f"Detected encoding: {encoding}")
-                    return encoding
+                    logger.debug("Detected encoding: %s", encoding_name)
+                    return encoding_name
         except UnicodeDecodeError:
             continue
-        except Exception as e:
-            logger.debug(f"Error trying encoding {encoding}: {e}")
+        except (OSError, IOError) as e:
+            logger.debug("Error trying encoding %s: %s", encoding_name, e)
             continue
 
-    logger.error(f"Could not detect encoding for {file_path}")
+    logger.error("Could not detect encoding for %s", file_path)
     return None
 
 
 def convert_subtitle_encoding(
-    input_file: str, output_file: str, target_encoding: str, source_encoding: Optional[str] = None
+    input_file: str,
+    output_file: str,
+    target_encoding: str,
+    source_encoding: Optional[str] = None,
 ) -> bool:
     """
     Convert subtitle file from source encoding to target encoding.
@@ -130,16 +136,22 @@ def convert_subtitle_encoding(
                 f.write(content.encode(target_encoding, errors="replace"))
 
         logger.info(
-            f"Converted {input_file} from {source_encoding} to {target_encoding} -> {output_file}"
+            "Converted %s from %s to %s -> %s",
+            input_file,
+            source_encoding,
+            target_encoding,
+            output_file,
         )
         return True
-    except Exception as e:
-        logger.error(f"Error converting {input_file} to {target_encoding}: {e}")
+    except (OSError, IOError, UnicodeError, LookupError) as e:
+        logger.error("Error converting %s to %s: %s", input_file, target_encoding, e)
         return False
 
 
 def convert_to_multiple_encodings(
-    input_file: str, output_dir: Optional[str] = None, encodings: List[str] = None
+    input_file: str,
+    output_dir: Optional[str] = None,
+    target_encodings: Optional[List[str]] = None,
 ) -> Dict[str, bool]:
     """
     Convert a subtitle file to multiple encodings.
@@ -147,17 +159,17 @@ def convert_to_multiple_encodings(
     Args:
         input_file: Path to the input subtitle file
         output_dir: Directory to save converted files (defaults to input file directory)
-        encodings: List of target encodings (defaults to a common subset)
+        target_encodings: List of target encodings (defaults to a common subset)
 
     Returns:
         Dictionary mapping target encodings to conversion success status
     """
-    if encodings is None:
-        encodings = ["utf-8", "utf-8-sig", "cp874", "tis-620", "iso8859-11"]
+    if target_encodings is None:
+        target_encodings = ["utf-8", "utf-8-sig", "cp874", "tis-620", "iso8859-11"]
 
     if not os.path.exists(input_file):
-        logger.error(f"Input file not found: {input_file}")
-        return {enc: False for enc in encodings}
+        logger.error("Input file not found: %s", input_file)
+        return {encoding: False for encoding in target_encodings}
 
     if output_dir is None:
         output_dir = os.path.dirname(input_file) or "."
@@ -169,31 +181,38 @@ def convert_to_multiple_encodings(
     source_path = Path(input_file)
     source_encoding = detect_encoding(input_file)
     if source_encoding is None:
-        return {enc: False for enc in encodings}
+        return {encoding: False for encoding in target_encodings}
 
     results = {}
-    for encoding in encodings:
+    for target_encoding in target_encodings:
         # Create output filename with encoding as suffix
         stem = source_path.stem
         # Remove any existing encoding suffix
-        for enc in COMMON_ENCODINGS:
-            suffix = f"-{enc}"
+        for common_enc in COMMON_ENCODINGS:
+            suffix = f"-{common_enc}"
             if stem.lower().endswith(suffix.lower()):
                 stem = stem[: -len(suffix)]
 
-        output_file = os.path.join(output_dir, f"{stem}-{encoding}{source_path.suffix}")
+        output_file = os.path.join(
+            output_dir, f"{stem}-{target_encoding}{source_path.suffix}"
+        )
 
         # Skip if the target encoding matches the source
-        if encoding.lower() == source_encoding.lower() and os.path.samefile(
+        if target_encoding.lower() == source_encoding.lower() and os.path.samefile(
             input_file, output_file
         ):
-            logger.info(f"Skipping conversion to {encoding} as it matches source encoding")
-            results[encoding] = True
+            logger.info(
+                "Skipping conversion to %s as it matches source encoding",
+                target_encoding,
+            )
+            results[target_encoding] = True
             continue
 
         # Convert the file
-        success = convert_subtitle_encoding(input_file, output_file, encoding, source_encoding)
-        results[encoding] = success
+        conversion_success = convert_subtitle_encoding(
+            input_file, output_file, target_encoding, source_encoding
+        )
+        results[target_encoding] = conversion_success
 
     return results
 
@@ -245,8 +264,8 @@ if __name__ == "__main__":
         )
         sys.exit(1)
 
-    input_file = sys.argv[1]
-    output_dir = sys.argv[2] if len(sys.argv) > 2 else None
+    input_file_path = sys.argv[1]
+    output_directory = sys.argv[2] if len(sys.argv) > 2 else None
 
     if len(sys.argv) > 3:
         encodings = sys.argv[3].split(",")
@@ -254,8 +273,10 @@ if __name__ == "__main__":
         # Default to some common encodings
         encodings = ["utf-8", "utf-8-sig", "cp874", "tis-620"]
 
-    results = convert_to_multiple_encodings(input_file, output_dir, encodings)
+    conversion_results = convert_to_multiple_encodings(
+        input_file_path, output_directory, target_encodings=encodings
+    )
 
-    for encoding, success in results.items():
-        status = "Success" if success else "Failed"
-        print(f"{encoding}: {status}")
+    for encoding, success in conversion_results.items():
+        STATUS = "Success" if success else "Failed"
+        print(f"{encoding}: {STATUS}")
